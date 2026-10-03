@@ -60,8 +60,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PROJECT_DIR: social-media-automatio/ltx2-video-gpu
-  LOG_FILE: social-media-automatio/ltx2-video-gpu/price-log.csv
+  PROJECT_DIR: gpu-deploy-run/ltx2-video-gpu
+  LOG_FILE: gpu-deploy-run/ltx2-video-gpu/price-log.csv
   IID_FILE: /tmp/ltx2_iids
   DISK_GB: "120"
   TOP_N: "3"
