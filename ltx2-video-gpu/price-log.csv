@@ -1,2 +1,0 @@
-timestamp,offer_id,gpu,location,dph,adv_down_mbps,est_ready_min,actual_ready_min,deploy_s,data_gb,est_run_usd,result
-2026-10-03T15:06:50Z,52741275,RTX_3090,United_Kingdom__GB,0.3533,8153.0,5.1,,,0,1.82,failed
