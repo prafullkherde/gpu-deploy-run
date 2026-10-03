@@ -16,42 +16,42 @@ on:
         type: string
         default: "RTX_4090,RTX_5090,RTX_3090,A100_PCIE,A100_SXM4"
       render_hours:
-        description: "Expected GPU render hours per daily run (unverified until a real render is timed)"
+        description: "Expected GPU render hours per daily run (unverified until a real render is timed) - render_hours -"
         required: false
         type: string
         default: "2"
       weights_gb:
-        description: "GB downloaded per fresh instance (LTX-2 43GB + Gemma ~24GB). Update from data_gb in attempts.csv."
+        description: "GB downloaded per fresh instance (LTX-2 43GB + Gemma ~24GB). Update from data_gb in attempts.csv. - weights_gb - "
         required: false
         type: string
         default: "67"
       max_ready_min:
-        description: "Reject offers estimated to take longer than this to be ready (boot + download + app start)"
+        description: "Reject offers estimated to take longer than this to be ready (boot + download + app start) - max_ready_min -"
         required: false
         type: string
         default: "15"
       min_real_mbps:
-        description: "Bar for the on-box probe against Hugging Face. 'auto' = what max_ready_min needs for weights_gb."
+        description: "Bar for the on-box probe against Hugging Face. 'auto' = what max_ready_min needs for weights_gb. - min_real_mbps-"
         required: false
         type: string
         default: "auto"
       max_dph:
-        description: "Reject offers above this $/hr (includes disk)"
+        description: "Reject offers above this $/hr (includes disk) - max_dph -"
         required: false
         type: string
         default: "0.60"
       max_dl_cost_per_gb:
-        description: "Reject hosts charging more than this $/GB for downloads (0.004 = $4/TB)"
+        description: "Reject hosts charging more than this $/GB for downloads (0.004 = $4/TB)- max_dl_cost_per_gb -"
         required: false
         type: string
         default: "0.004"
       hold_min:
-        description: "run only: keep the instance up this many minutes for a manual render test (max 60), then destroy"
+        description: "run only: keep the instance up this many minutes for a manual render test (max 60), then destroy - hold_min - "
         required: false
         type: string
         default: "0"
       wan2gp_image:
-        description: "Locked default — only change after checking hub.docker.com/r/robatvastai/wan2gp/tags and deliberately deciding to move"
+        description: "Locked default — only change after checking hub.docker.com/r/robatvastai/wan2gp/tags and deliberately deciding to move - wan2gp_image-"
         required: true
         type: string
         default: "robatvastai/wan2gp:b8b18f8-2026-10-01-cuda-12.9-amd64"
