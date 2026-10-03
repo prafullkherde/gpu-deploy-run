@@ -60,8 +60,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PROJECT_DIR: gpu-deploy-run/ltx2-video-gpu
-  LOG_FILE: gpu-deploy-run/ltx2-video-gpu/price-log.csv
+  PROJECT_DIR: ltx2-video-gpu
+  LOG_FILE: ltx2-video-gpu/price-log.csv
   IID_FILE: /tmp/ltx2_iids
   DISK_GB: "120"
   TOP_N: "3"
