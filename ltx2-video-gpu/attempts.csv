@@ -1,0 +1,4 @@
+timestamp,machine_id,offer_id,gpu,dph,adv_down_mbps,boot_s,probe_mbps,dl_mbps,ready_min,data_gb,result
+2026-10-03T15:50:28Z,136786,44885353,RTX_4090,0.4044,1476.3,450,0,,,,never_running
+2026-10-03T15:58:00Z,110506,52056524,RTX_4090,0.4044,1356.9,451,0,,,,never_running
+2026-10-03T16:04:03Z,10216,53982925,RTX_4090,0.46,1733.3,235,0,,,,no_ssh
