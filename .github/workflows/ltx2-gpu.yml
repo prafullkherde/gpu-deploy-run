@@ -1,0 +1,353 @@
+name: LTX2 Video GPU
+run-name: "${{ inputs.action }} — ${{ inputs.gpu_names }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "search = rank live offers, spends nothing. run = rent best, deploy, health check, (hold), ALWAYS destroy + verify. destroy_all = kill every instance on the account."
+        required: true
+        type: choice
+        options: [search, run, destroy_all]
+        default: search
+      gpu_names:
+        description: "Vast gpu_name tokens, comma separated, underscores. The ranking picks among them."
+        required: false
+        type: string
+        default: "RTX_4090,RTX_5090,RTX_3090,A100_PCIE,A100_SXM4"
+      render_hours:
+        description: "Expected GPU render hours per daily run (unverified until a real render is timed)"
+        required: false
+        type: string
+        default: "2"
+      weights_gb:
+        description: "GB downloaded per fresh instance (LTX-2 43GB + Gemma ~24GB). Update from the data_gb in run logs."
+        required: false
+        type: string
+        default: "67"
+      max_ready_min:
+        description: "Reject offers estimated to take longer than this to be ready (boot + download + app start)"
+        required: false
+        type: string
+        default: "15"
+      max_dph:
+        description: "Reject offers above this $/hr (includes disk)"
+        required: false
+        type: string
+        default: "0.60"
+      max_dl_cost_per_gb:
+        description: "Reject hosts charging more than this $/GB for downloads (0.004 = $4/TB)"
+        required: false
+        type: string
+        default: "0.004"
+      hold_min:
+        description: "run only: keep the instance up this many minutes for a manual render test (max 60), then destroy"
+        required: false
+        type: string
+        default: "0"
+      wan2gp_image:
+        description: "Locked default — only change after checking hub.docker.com/r/robatvastai/wan2gp/tags and deliberately deciding to move"
+        required: true
+        type: string
+        default: "robatvastai/wan2gp:b8b18f8-2026-10-01-cuda-12.9-amd64"
+
+permissions:
+  contents: write
+
+# Two overlapping runs would each see an "empty" account and double-bill.
+concurrency:
+  group: ltx2-gpu
+  cancel-in-progress: false
+
+env:
+  PROJECT_DIR: social-media-automatio/ltx2-video-gpu
+  LOG_FILE: social-media-automatio/ltx2-video-gpu/price-log.csv
+  IID_FILE: /tmp/ltx2_iids
+  DISK_GB: "120"
+  TOP_N: "3"
+  BOOT_S: "120"
+  APP_S: "90"
+  EFF: "0.7"
+  REF_DLPERF: "98.5"
+
+jobs:
+  gpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      VAST_KEY: ${{ secrets.LTX2_GPU_VAST_API_KEY }}
+      HF_TOKEN_VALUE: ${{ secrets.LTX2_GPU_HF_TOKEN }}
+      SSH_PRIVATE_KEY: ${{ secrets.LTX2_GPU_SSH_PRIVATE_KEY }}
+      IMAGE: ${{ github.event.inputs.wan2gp_image }}
+      SSH_OPTS: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ServerAliveInterval=30"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Init + install vast CLI (pinned)
+        run: |
+          : > "$IID_FILE"
+          : > /tmp/run_stats.env
+          pip install -q 'vastai==1.8.3'
+
+      - name: Destroy ALL instances on the account
+        if: ${{ github.event.inputs.action == 'destroy_all' }}
+        run: |
+          for round in 1 2 3; do
+            IDS=$(vastai show instances --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(' '.join(str(i['id']) for i in json.load(sys.stdin)))")
+            if [ -z "$IDS" ]; then echo "No instances on the account."; exit 0; fi
+            for IID in $IDS; do
+              echo "Destroying $IID"
+              yes | vastai destroy instance "$IID" --api-key "$VAST_KEY" || true
+            done
+            sleep 10
+          done
+          echo "::error::Instances still present after 3 rounds"
+          vastai show instances --api-key "$VAST_KEY"
+          exit 1
+
+      - name: Guard — account must be empty before renting
+        if: ${{ github.event.inputs.action == 'run' }}
+        run: |
+          N=$(vastai show instances --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+          if [ "$N" -gt 0 ]; then
+            echo "FAIL: $N instance(s) already exist — run destroy_all first. A leftover instance is double billing."
+            vastai show instances --api-key "$VAST_KEY"
+            exit 1
+          fi
+
+      - name: Preflight — HF token can read BOTH gated repos
+        if: ${{ github.event.inputs.action == 'run' }}
+        run: |
+          # Fails in seconds, before any GPU is rented. Checks BOTH gated
+          # repos separately — Gemma-3 and LTX-2 require separate license
+          # acceptances on huggingface.co; passing one does not imply the
+          # other. A token with only Gemma access would otherwise pass
+          # this gate, rent a GPU, then fail deep inside bootstrap.sh.
+          check() {
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $HF_TOKEN_VALUE" \
+              "https://huggingface.co/$1/resolve/main/$2")
+            echo "Access check for $1: HTTP $CODE"
+            if [ "$CODE" != "200" ] && [ "$CODE" != "302" ]; then
+              echo "FAIL: token's account has no access to $1 — accept the license for that repo with this account."
+              exit 1
+            fi
+          }
+          check "google/gemma-3-12b-it" "config.json"
+          check "Lightricks/LTX-2" "ltx-2-19b-distilled.safetensors"
+
+      - name: Search live offers and rank by cost per run
+        if: ${{ github.event.inputs.action != 'destroy_all' }}
+        env:
+          WEIGHTS_GB: ${{ github.event.inputs.weights_gb }}
+          RENDER_HOURS: ${{ github.event.inputs.render_hours }}
+          MAX_READY_MIN: ${{ github.event.inputs.max_ready_min }}
+          MAX_DPH: ${{ github.event.inputs.max_dph }}
+          GPU_NAMES: ${{ github.event.inputs.gpu_names }}
+          MAX_DL_COST: ${{ github.event.inputs.max_dl_cost_per_gb }}
+        run: |
+          set -e
+          # cuda_max_good>=12.9 matches the image tag; cpu_arch=amd64 excludes ARM (GB10/DGX) hosts.
+          QUERY="reliability>0.97 num_gpus=1 gpu_name in [$GPU_NAMES] gpu_ram>=24 cpu_ram>=48 disk_space>=$DISK_GB direct_port_count>=1 inet_down>500 inet_down_cost<=$MAX_DL_COST verified=true cuda_max_good>=12.9 cpu_arch=amd64 geolocation notin [CN]"
+          echo "Query: $QUERY"
+          vastai search offers "$QUERY" --storage "$DISK_GB" -o 'dph_total' --raw --api-key "$VAST_KEY" > /tmp/offers.json
+          python3 "$PROJECT_DIR"/scripts/pick_offers.py
+
+      - name: Prepare SSH key
+        if: ${{ github.event.inputs.action == 'run' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Rent — try the ranked offers in order until one is reachable over SSH
+        if: ${{ github.event.inputs.action == 'run' }}
+        id: rent
+        timeout-minutes: 20
+        run: |
+          set -e
+          cand() { python3 -c "import json,sys; print(json.load(open('/tmp/candidates.json'))[int(sys.argv[1])][sys.argv[2]])" "$1" "$2"; }
+          N=$(python3 -c "import json; print(len(json.load(open('/tmp/candidates.json'))))")
+
+          for idx in $(seq 0 $((N - 1))); do
+            OFFER_ID=$(cand $idx id)
+            GPU=$(cand $idx gpu_name | tr ' ,' '__')
+            echo "Attempt $((idx + 1))/$N: offer $OFFER_ID — $GPU, \$$(cand $idx dph_total)/hr, est ready $(cand $idx ready_min) min"
+            SSH_OK=0
+            STATUS=none
+
+            T_CREATE=$(date +%s)
+            CREATE_OUT=$(vastai create instance "$OFFER_ID" --image "$IMAGE" --disk "$DISK_GB" \
+              --env '-p 7860:7860' --ssh --direct --api-key "$VAST_KEY" 2>&1 || true)
+            # Success output embeds instance_api_key; only the contract ID is ever echoed.
+            IID=$(echo "$CREATE_OUT" | grep -oE "new_contract['\"]?: *[0-9]+" | grep -oE '[0-9]+$' | head -1 || true)
+            if [ -z "$IID" ]; then
+              echo "  create failed (offer probably taken): $(echo "$CREATE_OUT" | sed -E "s/instance_api_key['\"]?: *['\"][^'\"]+['\"]/instance_api_key=REDACTED/g" | head -c 200)"
+              continue
+            fi
+            echo "$IID" >> "$IID_FILE"
+            echo "  created instance $IID; waiting for running..."
+
+            for i in $(seq 1 20); do
+              STATUS=$(vastai show instance "$IID" --raw --api-key "$VAST_KEY" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('actual_status') or 'none')" 2>/dev/null || echo none)
+              [ "$STATUS" = "running" ] && break
+              sleep 12
+            done
+            T_RUNNING=$(date +%s)
+
+            if [ "$STATUS" = "running" ]; then
+              INFO=$(vastai show instance "$IID" --raw --api-key "$VAST_KEY")
+              HOST=$(echo "$INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['public_ipaddr'])")
+              PORT=$(echo "$INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); p=(d.get('ports') or {}).get('22/tcp'); print(p[0]['HostPort'] if p else d['ssh_port'])")
+              for j in $(seq 1 12); do
+                if ssh $SSH_OPTS -o ConnectTimeout=8 -i ~/.ssh/deploy_key -p "$PORT" root@"$HOST" true < /dev/null; then SSH_OK=1; break; fi
+                sleep 10
+              done
+            fi
+
+            if [ "$SSH_OK" = "1" ]; then
+              {
+                echo "T_CREATE=$T_CREATE"; echo "T_RUNNING=$T_RUNNING"; echo "T_SSH=$(date +%s)"
+                echo "OFFER_ID=$OFFER_ID"; echo "GPU=$GPU"; echo "LOC=$(cand $idx location | tr ' ,' '__')"
+                echo "DPH=$(cand $idx dph_total)"; echo "ADV_DOWN=$(cand $idx inet_down)"
+                echo "EST_READY_MIN=$(cand $idx ready_min)"; echo "EST_RUN=$(cand $idx est_run_usd)"
+              } >> /tmp/run_stats.env
+              { echo "iid=$IID"; echo "host=$HOST"; echo "port=$PORT"; } >> "$GITHUB_OUTPUT"
+              echo "### Rented $GPU (offer $OFFER_ID, instance $IID) in $((T_RUNNING - T_CREATE))s to running" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            echo "  not usable (status=$STATUS, ssh=$SSH_OK) — destroying $IID and trying the next offer"
+            yes | vastai destroy instance "$IID" --api-key "$VAST_KEY" || true
+          done
+
+          echo "::error::None of the $N ranked offers came up."
+          exit 1
+
+      - name: Deploy — preflight, bootstrap, start (idle-based polling)
+        if: ${{ github.event.inputs.action == 'run' }}
+        timeout-minutes: 32
+        run: |
+          set -e
+          SSH="ssh $SSH_OPTS -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
+          fail() { echo "$1"; $SSH 'tail -n 40 ~/deploy.log' < /dev/null || true; exit 1; }
+
+          # Ephemeral: /data is a plain directory so the existing scripts keep their paths.
+          $SSH "mkdir -p /data" < /dev/null
+          scp $SSH_OPTS -i ~/.ssh/deploy_key -P ${{ steps.rent.outputs.port }} \
+            "$PROJECT_DIR"/scripts/preflight.sh "$PROJECT_DIR"/scripts/bootstrap.sh "$PROJECT_DIR"/scripts/start.sh \
+            "$PROJECT_DIR"/scripts/download_weights.py \
+            root@${{ steps.rent.outputs.host }}:~/
+          printf '%s' "$HF_TOKEN_VALUE" | $SSH 'cat > ~/.hf_token && chmod 600 ~/.hf_token'
+
+          T_DEPLOY0=$(date +%s)
+          $SSH "export HF_TOKEN=\$(cat ~/.hf_token) && \
+            nohup bash -c 'bash preflight.sh && bash bootstrap.sh && bash start.sh' \
+            > ~/deploy.log 2>&1 < /dev/null & disown; echo LAUNCHED" < /dev/null
+
+          PREV=-1; STALL=0; DONE=0
+          for i in $(seq 1 120); do
+            CUR=$($SSH 'wc -c < ~/deploy.log 2>/dev/null || echo 0' < /dev/null | tr -dc '0-9')
+            CUR=${CUR:-0}
+            if [ "$CUR" -gt "$PREV" ]; then STALL=0; else STALL=$((STALL + 1)); fi
+            PREV=$CUR
+            TAIL=$($SSH 'tail -n 5 ~/deploy.log 2>/dev/null' < /dev/null || true)
+            echo "Poll $i: deploy.log ${CUR} bytes (stall $STALL)"
+            if echo "$TAIL" | grep -q "Starting Wan2GP"; then DONE=1; break; fi
+            if echo "$TAIL" | grep -q "^FAIL:"; then fail "FAILED: $TAIL"; fi
+            if [ "$STALL" -ge 20 ]; then fail "FAILED: deploy.log did not grow for ~5 min"; fi
+            sleep 15
+          done
+          [ "$DONE" = "1" ] || fail "FAILED: no success/fail marker after 30 min"
+
+          T_DEPLOYED=$(date +%s)
+          BYTES=$($SSH 'du -sb /data 2>/dev/null | cut -f1' < /dev/null | tr -dc '0-9')
+          { echo "T_DEPLOY0=$T_DEPLOY0"; echo "T_DEPLOYED=$T_DEPLOYED"; echo "DATA_BYTES=${BYTES:-0}"; } >> /tmp/run_stats.env
+          echo "Deploy finished in $((T_DEPLOYED - T_DEPLOY0))s, /data holds $(( ${BYTES:-0} / 1000000000 ))GB"
+
+      - name: Health check — wait for the mapped port to answer
+        if: ${{ github.event.inputs.action == 'run' }}
+        id: health
+        timeout-minutes: 8
+        run: |
+          set -e
+          INFO=$(vastai show instance ${{ steps.rent.outputs.iid }} --raw --api-key "$VAST_KEY")
+          APP_PORT=$(echo "$INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); p=(d.get('ports') or {}).get('7860/tcp') or [{}]; print(p[0].get('HostPort','7860'))")
+          URL="http://${{ steps.rent.outputs.host }}:${APP_PORT}/"
+          CODE=000
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$URL" || true)
+            echo "Health $i: HTTP $CODE"
+            [ "$CODE" = "200" ] && break
+            sleep 10
+          done
+          [ "$CODE" = "200" ] || { echo "FAIL: $URL never answered"; exit 1; }
+
+          T_HEALTHY=$(date +%s)
+          echo "T_HEALTHY=$T_HEALTHY" >> /tmp/run_stats.env
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          source /tmp/run_stats.env
+          BYTES_GB=$(( DATA_BYTES / 1000000000 ))
+          DEPLOY_S=$(( T_DEPLOYED - T_DEPLOY0 ))
+          EFF_MBPS=$(( DEPLOY_S > 0 ? DATA_BYTES * 8 / 1000000 / DEPLOY_S : 0 ))
+          {
+            echo "### Time to up: $(( (T_HEALTHY - T_CREATE) / 60 )) min (estimated ${EST_READY_MIN})"
+            echo "- rent to running: $((T_RUNNING - T_CREATE))s, ssh ready: $((T_SSH - T_RUNNING))s, deploy: ${DEPLOY_S}s, app answering: $((T_HEALTHY - T_DEPLOYED))s"
+            echo "- weights on disk: ${BYTES_GB}GB; throughput lower bound ${EFF_MBPS} Mbps (advertised ${ADV_DOWN}; deploy time includes installs, so this is a floor)"
+            echo "- URL: $URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hold for a manual render test, then continue to cleanup
+        if: ${{ github.event.inputs.action == 'run' && github.event.inputs.hold_min != '0' && github.event.inputs.hold_min != '' }}
+        timeout-minutes: 65
+        run: |
+          HOLD="${{ github.event.inputs.hold_min }}"
+          [ "$HOLD" -gt 60 ] && HOLD=60
+          echo "Instance stays up $HOLD min: ${{ steps.health.outputs.url }} — it is destroyed automatically afterwards."
+          echo "### Hold: ${{ steps.health.outputs.url }} for $HOLD min (time one real render now)" >> "$GITHUB_STEP_SUMMARY"
+          sleep $((HOLD * 60))
+          SSH="ssh $SSH_OPTS -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
+          echo "Disk after the test (did Wan2GP fetch extra checkpoints?):"
+          $SSH "du -sh /data /opt/workspace-internal/Wan2GP/ckpts 2>/dev/null; df -h / | tail -1" < /dev/null | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup — destroy everything this run created, then verify
+        if: ${{ always() && github.event.inputs.action == 'run' }}
+        run: |
+          IDS=$(sort -u "$IID_FILE" 2>/dev/null | tr '\n' ' ')
+          [ -z "$IDS" ] && echo "This run created no instance."
+          LEFT="?"
+          for round in 1 2 3 4 5 6; do
+            for IID in $IDS; do
+              yes | vastai destroy instance "$IID" --api-key "$VAST_KEY" > /dev/null 2>&1 || true
+            done
+            sleep 5
+            LEFT=$(vastai show instances --raw --api-key "$VAST_KEY" | IDS="$IDS" python3 -c "import json,sys,os; ids=set(os.environ['IDS'].split()); print(sum(1 for i in json.load(sys.stdin) if str(i['id']) in ids))" 2>/dev/null || echo "?")
+            [ "$LEFT" = "0" ] && break
+          done
+
+          TOTAL=$(vastai show instances --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
+          if [ "$LEFT" != "0" ]; then
+            echo "::error::Could not confirm destroy of: $IDS (still listed: $LEFT). Run destroy_all NOW — it is billing."
+            echo "### CLEANUP FAILED — instance may still be billing: $IDS" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          [ "$TOTAL" != "0" ] && echo "::warning::$TOTAL other instance(s) exist on the account (not created by this run)."
+          echo "### Cleanup verified: ${IDS:-none} destroyed; $TOTAL instance(s) left on the account" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Log run to price-log.csv (never blocks cleanup)
+        if: ${{ always() && github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        run: |
+          source /tmp/run_stats.env 2>/dev/null || true
+          [ -z "$OFFER_ID" ] && { echo "Nothing rented, nothing to log."; exit 0; }
+          mkdir -p "$(dirname "$LOG_FILE")"
+          [ -f "$LOG_FILE" ] || echo "timestamp,offer_id,gpu,location,dph,adv_down_mbps,est_ready_min,actual_ready_min,deploy_s,data_gb,est_run_usd,result" > "$LOG_FILE"
+          if [ -n "$T_HEALTHY" ]; then RESULT=ok; ACTUAL=$(( (T_HEALTHY - T_CREATE) / 60 )); else RESULT=failed; ACTUAL=""; fi
+          DEPLOY_S=""; [ -n "$T_DEPLOYED" ] && DEPLOY_S=$(( T_DEPLOYED - T_DEPLOY0 ))
+          echo "$(date -u +%FT%TZ),$OFFER_ID,$GPU,$LOC,$DPH,$ADV_DOWN,$EST_READY_MIN,$ACTUAL,$DEPLOY_S,$(( ${DATA_BYTES:-0} / 1000000000 )),$EST_RUN,$RESULT" >> "$LOG_FILE"
+          git config user.name "ltx2-gpu-bot"
+          git config user.email "actions@github.com"
+          git add "$LOG_FILE"
+          git commit -m "Log: $(tail -1 "$LOG_FILE")" || echo "Nothing to commit"
+          git pull --rebase || true
+          git push || echo "::warning::could not push price-log.csv"
