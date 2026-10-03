@@ -5,8 +5,11 @@ set -e
 source "$HOME/.ltx2_env"
 cd "$WAN2GP_DIR"
 
+# The workflow polls deploy.log for "Starting Wan2GP". Print it on BOTH paths,
+# otherwise an already-running app (e.g. started by the image itself) would
+# leave the deploy step waiting for a marker that never comes.
 if pgrep -f "wgp.py" > /dev/null; then
-  echo "wgp.py already running — not launching a second instance."
+  echo "Starting Wan2GP — already running, not launching a second instance."
   exit 0
 fi
 
