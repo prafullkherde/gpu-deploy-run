@@ -287,10 +287,21 @@ jobs:
             CUR=${CUR:-0}
             if [ "$CUR" -gt "$PREV" ]; then STALL=0; else STALL=$((STALL + 1)); fi
             PREV=$CUR
-            TAIL=$($SSH 'tail -n 5 ~/deploy.log 2>/dev/null' < /dev/null || true)
+            # Widened from 5 to 30 lines, and ALWAYS printed (not just on
+            # failure) — a banner printed before any real confirmation can
+            # scroll out of a narrow tail before the next poll, and the
+            # previous version only ever surfaced remote output once, at
+            # the very end. This is the fix for SSH/python output going
+            # "out of radar" during a run.
+            TAIL=$($SSH 'tail -n 30 ~/deploy.log 2>/dev/null' < /dev/null || true)
             echo "Poll $i: deploy.log ${CUR} bytes (stall $STALL)"
+            echo "$TAIL" | tail -n 8
             if echo "$TAIL" | grep -q "Starting Wan2GP"; then DONE=1; break; fi
-            if echo "$TAIL" | grep -q "^FAIL:"; then fail "FAILED (see the FAIL line below)"; fi
+            # Catches wgp.py's own native argparse/python errors too, not
+            # just our scripts' "FAIL:" lines — this is what let the
+            # --port bug hide for a full 5-minute stall instead of
+            # failing on the very next 15s poll.
+            if echo "$TAIL" | grep -qE "^FAIL:|Traceback|error: unrecognized arguments"; then fail "FAILED (see output above)"; fi
             if [ "$STALL" -ge 20 ]; then fail "FAILED: deploy.log did not grow for ~5 min"; fi
             sleep 15
           done
