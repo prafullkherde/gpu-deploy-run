@@ -17,4 +17,4 @@ echo "=================================================="
 echo "Starting Wan2GP — will listen on port 7860"
 echo "=================================================="
 
-"$PYTHON_BIN" wgp.py --listen --port 7860
+"$PYTHON_BIN" wgp.py --listen --server-port 7860
