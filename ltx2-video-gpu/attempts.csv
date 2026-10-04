@@ -5,3 +5,4 @@ timestamp,machine_id,offer_id,gpu,dph,adv_down_mbps,boot_s,probe_mbps,dl_mbps,re
 2026-10-04T03:11:13Z,59490,45289255,RTX_3090,0.3156,3094.1,456,0,,,,never_running
 2026-10-04T03:26:24Z,122589,51240122,RTX_3090,0.3711,2193.5,185,1415,,,0,deploy_failed
 2026-10-04T03:52:20Z,72636,35147008,RTX_5090,0.5828,6643.3,155,1146,,,0,deploy_failed
+2026-10-04T04:36:31Z,45773,53194863,RTX_3090,0.3267,2083.1,168,1390,,,0,deploy_failed
