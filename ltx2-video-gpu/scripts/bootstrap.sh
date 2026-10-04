@@ -5,6 +5,13 @@
 # ltx2-gpu.yml's deploy step; weights download every run.
 # preflight.sh is run once by the workflow's deploy chain; not repeated here.
 set -e
+set -x   # trace every command as it runs — no more guessing what's "in progress"
+
+# Without this, Python buffers stdout in large chunks when writing to a file
+# (deploy.log) instead of a terminal — so even explicit print() calls can sit
+# unflushed for a long time. This forces every python process launched from
+# here (download_weights.py included) to flush output immediately.
+export PYTHONUNBUFFERED=1
 
 WAN2GP_DIR="${WAN2GP_DIR:-/opt/workspace-internal/Wan2GP}"
 
@@ -55,7 +62,7 @@ fi
 # Install only if missing: upgrading inside the app's own env can bump a
 # version that Wan2GP / gradio / transformers pin.
 "$PYTHON_BIN" -c "import huggingface_hub" 2>/dev/null || "$PYTHON_BIN" -m pip install -q huggingface_hub
-"$PYTHON_BIN" "$HOME/download_weights.py"
+"$PYTHON_BIN" -u "$HOME/download_weights.py"
 
 echo ""
 echo "=================================================="
