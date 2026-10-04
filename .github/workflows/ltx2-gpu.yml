@@ -75,7 +75,7 @@ env:
   APP_S: "90"
   EFF: "0.7"
   REF_DLPERF: "98.5"
-  BOOT_TIMEOUT_S: "420"
+  BOOT_TIMEOUT_S: "300"
   COOLDOWN_DAYS: "7"
 
 jobs:
@@ -266,24 +266,35 @@ jobs:
         timeout-minutes: 32
         run: |
           set -e
-          SSH="ssh $SSH_OPTS -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
-          fail() { echo "$1"; echo "--- last 40 lines of deploy.log ---"; $SSH 'tail -n 40 ~/deploy.log' < /dev/null || true; exit 1; }
+          # ConnectTimeout=10 + an outer `timeout` wrapper on every poll call
+          # below: without these, a single hung SSH connection (TCP connects
+          # fine, then nothing comes back) blocks this entire step with ZERO
+          # output — no Poll lines, no error, nothing — until the 32-minute
+          # job timeout or a manual cancel. This is what "LAUNCHED" followed
+          # by total silence for 16 minutes actually was. ConnectTimeout alone
+          # doesn't cover it — it only guards the connect+auth phase, not a
+          # hang in the remote command after auth succeeds.
+          SSH="ssh $SSH_OPTS -o ConnectTimeout=10 -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
+          fail() { echo "$1"; echo "--- last 40 lines of deploy.log ---"; timeout 20 $SSH 'tail -n 40 ~/deploy.log' < /dev/null || true; exit 1; }
 
           # Ephemeral: /data is a plain directory so the scripts keep their paths.
-          $SSH "mkdir -p /data" < /dev/null
-          scp $SSH_OPTS -i ~/.ssh/deploy_key -P ${{ steps.rent.outputs.port }} \
+          timeout 20 $SSH "mkdir -p /data" < /dev/null
+          timeout 60 scp $SSH_OPTS -o ConnectTimeout=10 -i ~/.ssh/deploy_key -P ${{ steps.rent.outputs.port }} \
             "$PROJECT_DIR"/scripts/preflight.sh "$PROJECT_DIR"/scripts/bootstrap.sh "$PROJECT_DIR"/scripts/start.sh \
             "$PROJECT_DIR"/scripts/download_weights.py \
             root@${{ steps.rent.outputs.host }}:~/
 
           T_DEPLOY0=$(date +%s)
-          $SSH "export HF_TOKEN=\$(cat ~/.hf_token) && \
+          timeout 20 $SSH "export HF_TOKEN=\$(cat ~/.hf_token) && \
             nohup bash -c 'bash preflight.sh && bash bootstrap.sh && bash start.sh' \
             > ~/deploy.log 2>&1 < /dev/null & disown; echo LAUNCHED" < /dev/null
 
           PREV=-1; STALL=0; DONE=0
           for i in $(seq 1 120); do
-            CUR=$($SSH 'wc -c < ~/deploy.log 2>/dev/null || echo 0' < /dev/null | tr -dc '0-9')
+            # `timeout 20` on both calls: if the connection hangs rather
+            # than erroring, this forces a return every poll instead of
+            # freezing silently — the actual fix for the 16-minute hang.
+            CUR=$(timeout 20 $SSH 'wc -c < ~/deploy.log 2>/dev/null || echo 0' < /dev/null | tr -dc '0-9')
             CUR=${CUR:-0}
             if [ "$CUR" -gt "$PREV" ]; then STALL=0; else STALL=$((STALL + 1)); fi
             PREV=$CUR
@@ -293,7 +304,7 @@ jobs:
             # previous version only ever surfaced remote output once, at
             # the very end. This is the fix for SSH/python output going
             # "out of radar" during a run.
-            TAIL=$($SSH 'tail -n 30 ~/deploy.log 2>/dev/null' < /dev/null || true)
+            TAIL=$(timeout 20 $SSH 'tail -n 30 ~/deploy.log 2>/dev/null' < /dev/null || true)
             echo "Poll $i: deploy.log ${CUR} bytes (stall $STALL)"
             echo "$TAIL" | tail -n 8
             if echo "$TAIL" | grep -q "Starting Wan2GP"; then DONE=1; break; fi
@@ -308,8 +319,8 @@ jobs:
           [ "$DONE" = "1" ] || fail "FAILED: no success/fail marker after 30 min"
 
           T_DEPLOYED=$(date +%s)
-          BYTES=$($SSH 'du -sb /data 2>/dev/null | cut -f1' < /dev/null | tr -dc '0-9')
-          DLLINE=$($SSH 'grep -h DL_STATS ~/deploy.log | tail -1' < /dev/null || true)
+          BYTES=$(timeout 20 $SSH 'du -sb /data 2>/dev/null | cut -f1' < /dev/null | tr -dc '0-9')
+          DLLINE=$(timeout 20 $SSH 'grep -h DL_STATS ~/deploy.log | tail -1' < /dev/null || true)
           DL_MBPS=$(echo "$DLLINE" | grep -oE 'mbps=[0-9]+' | grep -oE '[0-9]+' || echo 0)
           { echo "T_DEPLOY0=$T_DEPLOY0"; echo "T_DEPLOYED=$T_DEPLOYED"; echo "DATA_BYTES=${BYTES:-0}"; echo "DL_MBPS=${DL_MBPS:-0}"; } >> /tmp/run_stats.env
           echo "Deploy finished in $((T_DEPLOYED - T_DEPLOY0))s; /data holds $(( ${BYTES:-0} / 1000000000 ))GB; download ${DL_MBPS:-0} Mbps"
