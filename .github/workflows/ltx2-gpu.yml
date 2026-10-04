@@ -285,7 +285,13 @@ jobs:
             root@${{ steps.rent.outputs.host }}:~/
 
           T_DEPLOY0=$(date +%s)
-          timeout 20 $SSH "export HF_TOKEN=\$(cat ~/.hf_token) && \
+          # -f: SSH's own built-in fix for exactly this situation — it tells
+          # the client to return as soon as the remote command has started,
+          # instead of waiting for the session/channel to fully close (which
+          # can hang even after a backgrounded job's own output is done).
+          # This is what was silently eating the local `timeout 20` budget
+          # and killing the step with exit 124 before polling ever began.
+          timeout 20 $SSH -f "export HF_TOKEN=\$(cat ~/.hf_token) && \
             nohup bash -c 'bash preflight.sh && bash bootstrap.sh && bash start.sh' \
             > ~/deploy.log 2>&1 < /dev/null & disown; echo LAUNCHED" < /dev/null
 
