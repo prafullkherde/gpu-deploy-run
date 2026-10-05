@@ -24,9 +24,9 @@ SETTINGS_DIR = Path(os.environ.get("SETTINGS_DIR", HOME / "render_settings"))
 OUT_DIR = Path(os.environ.get("OUT_DIR", HOME / "results"))
 FPS = float(os.environ.get("ASSUMED_FPS", "24"))  # only used to predict duration from video_length
 CASES = [  # (name, settings file, timeout seconds)
-    ("image", "image.json", 600),
-    ("video_short", "video_short.json", 900),
-    ("video_30s", "video_30s.json", 3600),
+    ("image", "image.json", 1500),        # first case pays Wan2GP's own model download (qwen_image_20B is a second one)
+    ("video_short", "video_short.json", 1500),  # 42 GB LTX-2.3 + Gemma download took ~6 min at 1 Gbps
+    ("video_30s", "video_30s.json", 3000),
 ]
 MEDIA_EXT = {".mp4", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".webp"}
 VIDEO_EXT = {".mp4", ".mkv", ".webm"}
@@ -167,6 +167,19 @@ def model_file_report(settings_paths):
     return report
 
 
+def failure_summary(log_text):
+    """One-line root cause. The last 600 chars of a Python traceback are mid-stack noise; the useful facts are
+    the final exception line and the innermost Wan2GP frame."""
+    lines = [ln.strip() for ln in log_text.replace("\r", "\n").splitlines() if ln.strip()]
+    exc = next((ln for ln in reversed(lines) if re.match(r"^[\w.]*(Error|Exception|Exit)\b", ln)), "")
+    frames = [ln for ln in lines if ln.startswith('File "') and "/Wan2GP/" in ln]
+    where = re.sub(r'^File "[^"]*/Wan2GP/', "", frames[-1]) if frames else ""
+    kind = ("triton_kernel" if re.search(r"triton|CompilationError", log_text) else
+            "oom" if re.search(r"out of memory|OutOfMemory", log_text, re.I) else
+            "download" if re.search(r"HTTPError|ConnectionError|No space left", log_text) else "other")
+    return {"kind": kind, "exception": exc[:160], "where": where[:120]}
+
+
 def heartbeat(name, start, log_path, sampler, stop_evt):
     """wgp.py writes to a file, not to our stdout, so without this the Actions log is silent for
     the whole render. Prints elapsed, GPU, and the last line wgp wrote (progress bars use \\r)."""
@@ -265,12 +278,15 @@ def run_case(name, settings, timeout_s):
         rec["hf_access_errors"] = hits[:5]
         print(f"[{name}] HF ACCESS PROBLEM in log: {hits[0]}", flush=True)
     if status != "SUCCESS":
-        rec["log_tail"] = log_path.read_text(errors="replace")[-600:]
+        text = log_path.read_text(errors="replace")
+        rec["failure"] = failure_summary(text)
+        rec["log_tail"] = text[-600:]
     results.append(rec)
     print(f"[{name}] {status} in {elapsed}s | vram_peak={rec['peak_vram_mb']}MB util={rec['mean_util_pct']}% "
           f"temp={rec['max_temp_c']}C | ckpts +{rec['ckpts_downloaded_mb']}MB | "
           f"{[(m['file'], m.get('width'), m.get('height'), m.get('duration_s')) for m in media]}", flush=True)
     if status != "SUCCESS":
+        print(f"[{name}] ROOT CAUSE: {rec['failure']}", flush=True)
         print(f"[{name}] LOG TAIL:\n{rec['log_tail']}", flush=True)
 
 
@@ -297,6 +313,10 @@ def main():
         "ckpts_before": sh(f"du -sh {WAN2GP_DIR}/ckpts/* 2>/dev/null | head -20"),
         "data_before": sh("du -sh /data 2>/dev/null"),
     }
+    env_snap["packages"] = sh(
+        f"{PYTHON_BIN} -c \"import importlib.metadata as m; "
+        "print({n: m.version(n) for n in ('torch','triton','sageattention','flash_attn','mmgp','gradio') "
+        "if any(d.metadata['Name'].lower().replace('-','_')==n for d in m.distributions())})\" 2>&1 | tail -1")
     print(json.dumps(env_snap, indent=2), flush=True)
 
     runnable = []
