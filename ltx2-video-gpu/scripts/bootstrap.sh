@@ -53,16 +53,25 @@ echo "Using python: $PYTHON_BIN"
 
 echo ""
 echo "=================================================="
-echo "STEP 2/4 — Download weights into /data (ephemeral — every run)"
+echo "STEP 2/4 — Pre-download weights into /data (OFF by default)"
 echo "=================================================="
-if [ -z "$HF_TOKEN" ]; then
-  echo "FAIL: HF_TOKEN not set — cannot download gated LTX-2/Gemma weights."
-  exit 1
+# Run 37297908189 proved Wan2GP downloads its OWN files (ltx-2.3-22b distilled int8 + gemma-3-12b-it-qat,
+# 42 GB) into ckpts/ and never reads /data. The 67 GB pre-download cost ~9 min and was unused.
+# Set PREDOWNLOAD=1 only if you deliberately want the old behaviour.
+PREDOWNLOAD="${PREDOWNLOAD:-0}"
+if [ "$PREDOWNLOAD" = "1" ]; then
+  if [ -z "$HF_TOKEN" ]; then
+    echo "FAIL: HF_TOKEN not set — cannot download gated LTX-2/Gemma weights."
+    exit 1
+  fi
+  # Install only if missing: upgrading inside the app's own env can bump a
+  # version that Wan2GP / gradio / transformers pin.
+  "$PYTHON_BIN" -c "import huggingface_hub" 2>/dev/null || "$PYTHON_BIN" -m pip install -q huggingface_hub
+  "$PYTHON_BIN" -u "$HOME/download_weights.py"
+else
+  echo "SKIPPED (PREDOWNLOAD=0): Wan2GP fetches its own weights on first use."
+  echo "DL_STATS bytes=0 secs=0 mbps=0"
 fi
-# Install only if missing: upgrading inside the app's own env can bump a
-# version that Wan2GP / gradio / transformers pin.
-"$PYTHON_BIN" -c "import huggingface_hub" 2>/dev/null || "$PYTHON_BIN" -m pip install -q huggingface_hub
-"$PYTHON_BIN" -u "$HOME/download_weights.py"
 
 echo ""
 echo "=================================================="
@@ -72,9 +81,51 @@ echo "=================================================="
 # checkpoints. The first run with hold_min>0 shows what it actually does.
 cd "$WAN2GP_DIR"
 mkdir -p ckpts
-ln -sfn /data/ltx-2-19b-distilled.safetensors ckpts/ltx-2-19b-distilled.safetensors
-ln -sfn /data/gemma3 ckpts/gemma3
+if [ "$PREDOWNLOAD" = "1" ]; then
+  ln -sfn /data/ltx-2-19b-distilled.safetensors ckpts/ltx-2-19b-distilled.safetensors
+  ln -sfn /data/gemma3 ckpts/gemma3
+fi
 command -v ffmpeg > /dev/null || { echo "FAIL: ffmpeg not found in this image."; exit 1; }
+
+echo ""
+echo "=================================================="
+echo "STEP 3b — Known Wan2GP / Triton compatibility patch (LTX-2 RoPE kernel)"
+echo "=================================================="
+# Run 37297908189: every LTX-2.3 render died in models/ltx2/denoiser_triton.py::_split_rope with
+#   TypeError: 'constexpr' object is not subscriptable
+# A public report (LykosAI/StabilityMatrix #1756, RTX 5090, torch 2.7.1+cu128, Triton 3.3.1) traces the
+# same error to indexing tl.constexpr objects GRID / AXIS_IDS and fixes it by indexing `.value`.
+# UNVERIFIED here: single third-party source. Idempotent, scoped to _split_rope, original kept as .orig.
+set +x
+"$PYTHON_BIN" - "$WAN2GP_DIR/models/ltx2/denoiser_triton.py" <<'PY' || echo "PATCH denoiser_triton: patcher error (continuing unpatched)"
+import re, shutil, sys
+
+path = sys.argv[1]
+try:
+    src = open(path).read()
+except FileNotFoundError:
+    print("PATCH denoiser_triton: file not found (skipped)")
+    sys.exit(0)
+
+m = re.search(r"(@triton\.jit\s*\ndef _split_rope\(.*?)(?=\n@triton\.jit|\ndef |\Z)", src, re.S)
+if not m:
+    print("PATCH denoiser_triton: _split_rope not found (nothing changed)")
+    sys.exit(0)
+
+body, total = m.group(1), 0
+for name in ("AXIS_IDS", "GRID"):
+    body, n = re.subn(rf"\b{name}\[", f"{name}.value[", body)  # `\b` and `[` keep it from re-matching `.value[`
+    total += n
+if total == 0:
+    print("PATCH denoiser_triton: already applied or no indexing found (nothing changed)")
+    sys.exit(0)
+
+shutil.copy(path, path + ".orig")
+open(path, "w").write(src[:m.start(1)] + body + src[m.end(1):])
+print(f"PATCH denoiser_triton: applied ({total} index sites in _split_rope); backup {path}.orig")
+PY
+set -x
+rm -rf "$HOME/.triton/cache" 2>/dev/null || true   # stale compiled kernels must not mask the patch
 
 echo ""
 echo "=================================================="
