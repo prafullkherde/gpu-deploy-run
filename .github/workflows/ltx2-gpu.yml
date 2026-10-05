@@ -26,15 +26,15 @@ on:
         type: string
         default: "67"
       max_ready_min:
-        description: "Reject offers estimated to take longer than this to be ready (boot + download + app start) - max_ready_min -"
+        description: "Reject offers whose ESTIMATED ready time (boot + download + app start) exceeds this. Estimates are rough, so this is a wide pre-filter; the real gates are the 5 min boot timeout and the on-box probe. - max_ready_min -"
         required: false
         type: string
-        default: "15"
+        default: "30"
       min_real_mbps:
-        description: "Bar for the on-box probe against Hugging Face. 'auto' = what max_ready_min needs for weights_gb. - min_real_mbps-"
+        description: "Bar for the on-box probe against Hugging Face. 'auto' = what max_ready_min needs for weights_gb. 800 = sustained-pull bar (hosts advertising >2 Gbps still probe ~1-1.4 Gbps). - min_real_mbps-"
         required: false
         type: string
-        default: "auto"
+        default: "800"
       max_dph:
         description: "Reject offers above this $/hr (includes disk) - max_dph -"
         required: false
@@ -45,6 +45,12 @@ on:
         required: false
         type: string
         default: "0.004"
+      render_test:
+        description: "run only: after HTTP 200 run scripts/render_test.py (image + short clip + 30 s video from render_settings/), upload outputs as an artifact, commit results.json. 'true' or 'false' - render_test -"
+        required: false
+        type: choice
+        options: ["false", "true"]
+        default: "false"
       hold_min:
         description: "run only: keep the instance up this many minutes for a manual render test (max 60), then destroy - hold_min - "
         required: false
@@ -67,6 +73,7 @@ concurrency:
 env:
   PROJECT_DIR: ltx2-video-gpu
   ATTEMPTS_FILE: ltx2-video-gpu/attempts.csv
+  RUNS_FILE: ltx2-video-gpu/runs.csv
   NEW_ATTEMPTS: /tmp/attempts_new.csv
   IID_FILE: /tmp/ltx2_iids
   DISK_GB: "120"
@@ -75,13 +82,14 @@ env:
   APP_S: "90"
   EFF: "0.7"
   REF_DLPERF: "98.5"
+  # History (15 boxes): every box that came up did so in <= 185 s; the 8 that did not were cut at this timeout.
   BOOT_TIMEOUT_S: "300"
   COOLDOWN_DAYS: "7"
 
 jobs:
   gpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       VAST_KEY: ${{ secrets.LTX2_GPU_VAST_API_KEY }}
       HF_TOKEN_VALUE: ${{ secrets.LTX2_GPU_HF_TOKEN }}
@@ -124,6 +132,15 @@ jobs:
             vastai show instances --api-key "$VAST_KEY"
             exit 1
           fi
+
+      - name: Credit before
+        if: ${{ github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        run: |
+          # `credit` is the documented balance field of `vastai show user`; only that number is kept, never the full JSON.
+          CREDIT=$(vastai show user --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(json.load(sys.stdin).get('credit',''))" 2>/dev/null || true)
+          echo "CREDIT_BEFORE=$CREDIT" >> /tmp/run_stats.env
+          echo "Credit before: \$${CREDIT:-unknown}"
 
       - name: Preflight — HF token can read BOTH gated repos
         if: ${{ github.event.inputs.action == 'run' }}
@@ -194,7 +211,7 @@ jobs:
             DPH=$(cand $idx dph_total)
             ADV_DOWN=$(cand $idx inet_down)
             echo "Attempt $((idx + 1))/$N: offer $OFFER_ID (machine $MACHINE_ID) — $GPU, \$${DPH}/hr, advertised ${ADV_DOWN} Mbps, est ready $(cand $idx ready_min) min"
-            log_attempt() { echo "$(date -u +%FT%TZ),$MACHINE_ID,$OFFER_ID,$GPU,$DPH,$ADV_DOWN,${2:-},${3:-},,,,$1" >> "$NEW_ATTEMPTS"; }
+            log_attempt() { echo "$(date -u +%FT%TZ),$MACHINE_ID,$OFFER_ID,$GPU,$DPH,$ADV_DOWN,${2:-},${3:-},,,,$1,$(cand $idx ready_min)" >> "$NEW_ATTEMPTS"; }
 
             T_CREATE=$(date +%s)
             CREATE_OUT=$(vastai create instance "$OFFER_ID" --image "$IMAGE" --disk "$DISK_GB" \
@@ -362,18 +379,51 @@ jobs:
             echo "- URL: $URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Render test — image + short clip + 30 s video on the live box, pull results
+        if: ${{ github.event.inputs.action == 'run' && github.event.inputs.render_test == 'true' }}
+        timeout-minutes: 90
+        run: |
+          # GitHub runs `bash -e` by default; turn it off so a failing render still reaches the scp that
+          # pulls results before cleanup destroys the box.
+          set +e
+          T_OPTS="-o ConnectTimeout=10 -i $HOME/.ssh/deploy_key"
+          HOST="${{ steps.rent.outputs.host }}"; PORT="${{ steps.rent.outputs.port }}"
+          timeout 120 scp -r $SSH_OPTS $T_OPTS -P "$PORT" \
+            "$PROJECT_DIR"/scripts/render_test.py "$PROJECT_DIR"/render_settings root@"$HOST":~/ < /dev/null
+          T0=$(date +%s)
+          # Output streams live into this log; ServerAliveInterval (SSH_OPTS) keeps the link up during long renders.
+          ssh $SSH_OPTS $T_OPTS -p "$PORT" root@"$HOST" 'python3 ~/render_test.py' < /dev/null
+          RC=$?
+          echo "render_test exit $RC after $(( $(date +%s) - T0 ))s"
+          echo "T_RENDER_S=$(( $(date +%s) - T0 ))" >> /tmp/run_stats.env
+          mkdir -p results
+          timeout 900 scp -r $SSH_OPTS $T_OPTS -P "$PORT" root@"$HOST":~/results/. results/ < /dev/null || echo "::warning::could not pull results"
+          echo "### Render test: exit $RC, $(( $(date +%s) - T0 ))s" >> "$GITHUB_STEP_SUMMARY"
+          exit $RC
+
       - name: Hold for a manual render test, then continue to cleanup
         if: ${{ github.event.inputs.action == 'run' && github.event.inputs.hold_min != '0' && github.event.inputs.hold_min != '' }}
         timeout-minutes: 65
         run: |
           HOLD="${{ github.event.inputs.hold_min }}"
           if [ "$HOLD" -gt 60 ]; then HOLD=60; fi
+          # NOTE: if render_test ran first it stopped wgp.py, so the URL below will not answer.
           echo "Instance stays up $HOLD min: ${{ steps.health.outputs.url }} — it is destroyed automatically afterwards."
           echo "### Hold: ${{ steps.health.outputs.url }} for $HOLD min (time one real render now)" >> "$GITHUB_STEP_SUMMARY"
           sleep $((HOLD * 60))
           SSH="ssh $SSH_OPTS -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
           echo "Disk after the test (did Wan2GP fetch extra checkpoints?):"
           $SSH "du -sh /data /opt/workspace-internal/Wan2GP/ckpts 2>/dev/null; df -h / | tail -1" < /dev/null | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Pull logs from the box before it is destroyed
+        if: ${{ always() && github.event.inputs.action == 'run' && steps.rent.outputs.host != '' }}
+        continue-on-error: true
+        run: |
+          # Actions shows only the last lines of deploy.log per poll; this keeps the whole file.
+          mkdir -p results
+          T_OPTS="-o ConnectTimeout=10 -i $HOME/.ssh/deploy_key"
+          timeout 90 scp $SSH_OPTS $T_OPTS -P "${{ steps.rent.outputs.port }}" \
+            root@"${{ steps.rent.outputs.host }}":~/deploy.log results/deploy.log < /dev/null || echo "::warning::no deploy.log"
 
       - name: Cleanup — destroy everything this run created, then verify
         if: ${{ always() && github.event.inputs.action == 'run' }}
@@ -399,23 +449,44 @@ jobs:
           if [ "$TOTAL" != "0" ]; then echo "::warning::$TOTAL other instance(s) exist on the account (not created by this run)."; fi
           echo "### Cleanup verified: ${IDS:-none} destroyed; $TOTAL instance(s) left on the account" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Log attempts to attempts.csv (never blocks cleanup)
+      - name: Credit after + spend
         if: ${{ always() && github.event.inputs.action == 'run' }}
         continue-on-error: true
         run: |
-          source /tmp/run_stats.env 2>/dev/null || true
-          mkdir -p "$(dirname "$ATTEMPTS_FILE")"
-          if [ ! -f "$ATTEMPTS_FILE" ]; then
-            echo "timestamp,machine_id,offer_id,gpu,dph,adv_down_mbps,boot_s,probe_mbps,dl_mbps,ready_min,data_gb,result" > "$ATTEMPTS_FILE"
-          fi
-          if [ -s "$NEW_ATTEMPTS" ]; then cat "$NEW_ATTEMPTS" >> "$ATTEMPTS_FILE"; fi
-          if [ -n "$OFFER_ID" ]; then
-            if [ -n "$T_HEALTHY" ]; then RESULT=ok; READY=$(( (T_HEALTHY - T_CREATE) / 60 )); else RESULT=deploy_failed; READY=""; fi
-            echo "$(date -u +%FT%TZ),$MACHINE_ID,$OFFER_ID,$GPU,$DPH,$ADV_DOWN,$BOOT_OBS,$PROBE_MBPS,${DL_MBPS:-},$READY,$(( ${DATA_BYTES:-0} / 1000000000 )),$RESULT" >> "$ATTEMPTS_FILE"
+          CREDIT=$(vastai show user --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(json.load(sys.stdin).get('credit',''))" 2>/dev/null || true)
+          echo "CREDIT_AFTER=$CREDIT" >> /tmp/run_stats.env
+          source /tmp/run_stats.env
+          SPENT=$(python3 -c "import os; b,a=os.environ.get('CREDIT_BEFORE'),os.environ.get('CREDIT_AFTER'); print(round(float(b)-float(a),4) if b and a else 'unknown')")
+          echo "Credit: \$${CREDIT_BEFORE:-?} -> \$${CREDIT_AFTER:-?}  spent \$${SPENT} (billing can lag a few minutes; runs.csv keeps the number)"
+          echo "### Spend: \$${SPENT} (credit \$${CREDIT_BEFORE:-?} -> \$${CREDIT_AFTER:-?})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact (render outputs, results.json, deploy.log, GPU csv)
+        if: ${{ always() && github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-${{ github.run_id }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Log attempts + run ledger to git (never blocks cleanup)
+        if: ${{ always() && github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # attempts.csv = one row per box (host memory); runs.csv = one row per run (credit before/after).
+          python3 "$PROJECT_DIR"/scripts/log_attempt.py
+          if [ -f results/results.json ]; then
+            mkdir -p "$PROJECT_DIR/render_runs"
+            source /tmp/run_stats.env 2>/dev/null || true
+            cp results/results.json "$PROJECT_DIR/render_runs/$(date -u +%Y%m%dT%H%M%SZ)_m${MACHINE_ID:-none}.json"
+            git add "$PROJECT_DIR/render_runs"
           fi
           git config user.name "ltx2-gpu-bot"
           git config user.email "actions@github.com"
-          git add "$ATTEMPTS_FILE"
-          git commit -m "Log: $(tail -1 "$ATTEMPTS_FILE")" || echo "Nothing to commit"
+          git add "$ATTEMPTS_FILE" "$RUNS_FILE"
+          git commit -m "Log: run ${{ github.run_id }}" || echo "Nothing to commit"
           git pull --rebase || true
           git push || echo "::warning::could not push attempts.csv"
