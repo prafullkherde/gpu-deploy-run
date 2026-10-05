@@ -1,1 +1,275 @@
-# gpu-deploy-run
+# ltx2-video-gpu: full picture
+
+Goal: rent a Vast.ai GPU box that is **ready fast**, run image + video generation on it, bring the
+results back, **destroy the box**, and remember which hosts were good.
+
+Contents: 1 Files · 2 Flow · 3 Inputs · 4 State · 5 Host memory · 6 render_test.py · 7 Libraries ·
+8 Failure reasons · 9 Spend log · 10 Runbook · 11 Questions and answers · 12 UNVERIFIED · 13 Files to add or edit
+
+## 1. Files in this project
+
+```
+.github/workflows/ltx2-gpu.yml          the whole pipeline (manual dispatch)
+README.md                               pointer to this file
+ltx2-video-gpu/
+├── ltx2-video-gpu-readme.md            this file
+├── attempts.csv                        host memory, one row per box tried (auto-written)
+├── runs.csv                            money + outcome, one row per run (auto-written)
+├── render_runs/<ts>_m<machine>.json    render summary per run (auto-written)
+├── render_settings/
+│   ├── image.json                      Wan2GP settings: one still
+│   ├── video_short.json                Wan2GP settings: short clip (121 frames)
+│   └── video_30s.json                  Wan2GP settings: 30 s clip (721 frames at 24 fps)
+└── scripts/
+    ├── pick_offers.py                  runner: rank live offers, learn from attempts.csv
+    ├── probe_bandwidth.sh              box: real throughput to Hugging Face
+    ├── preflight.sh                    box: GPU, VRAM, disk, python, HF reachable
+    ├── bootstrap.sh                    box: find python+torch, download weights, symlink
+    ├── download_weights.py             box: LTX-2 + Gemma download with progress lines
+    ├── start.sh                        box: start Wan2GP on :7860
+    ├── render_test.py                  box: run the 3 render cases, collect stats
+    └── log_attempt.py                  runner: write attempts.csv + runs.csv
+```
+
+## 2. End-to-end flow (action = `run`)
+
+```
+GitHub runner (free)                                Vast.ai box (billed per second)
+────────────────────                                ───────────────────────────────
+Guard: account must have 0 instances;  record credit BEFORE
+Preflight: HF token can read Gemma-3 + LTX-2 repos
+Search offers ─► pick_offers.py ranks (reads attempts.csv)
+Rent #1 ──────────────────────────────────────────► image pull, boot, SSH
+   probe_bandwidth.sh runs ON the box ◄──────────── real HF throughput
+   probe < bar or box never ready? destroy, rent #2 … #5
+Deploy: preflight.sh → bootstrap.sh → download_weights.py → start.sh   (log: ~/deploy.log)
+Health: curl :7860 until HTTP 200
+[render_test=true] render_test.py ───────────────► stop UI, wgp.py --process × 3 cases
+   scp results/ back ◄───────────────────────────── images, video, results.json, logs
+Pull deploy.log ◄────────────────────────────────── whole file, before destroy
+Destroy everything + verify 0 left          (always runs);  record credit AFTER
+Upload artifact run-<run_id>
+Append attempts.csv + runs.csv, commit render_runs/*.json  (always runs)
+```
+Design rule: the runner is the control plane, the box is disposable, and everything worth keeping is
+pulled back **before** destroy.
+
+## 3. Inputs (all have defaults; for a normal run only choose `action`)
+
+| Input | Default | Meaning |
+|---|---|---|
+| action | search | `search` ranks only (free). `run` does everything. `destroy_all` kills all instances |
+| gpu_names | 4090,5090,3090,A100 | candidate GPUs; ranking picks among them |
+| max_ready_min | 30 | wide pre-filter on the ESTIMATED ready time. Estimates are rough; the real gates are the 5 min boot timeout and the probe |
+| min_real_mbps | 800 | bar for the on-box probe. `auto` derives it from max_ready_min |
+| max_dph | 0.60 | $/hr ceiling incl. disk |
+| render_test | false | run the 3 render cases after HTTP 200 |
+| hold_min | 0 | keep box up N min for manual use (the render test stops the UI, so use one or the other) |
+| wan2gp_image | pinned tag | change only deliberately |
+
+The **model is not an input**: it comes from `model_type` inside `render_settings/*.json`.
+The workflow runs on manual dispatch only. A cron `schedule` event carries no inputs, so every
+`if: inputs.action == ...` step would be skipped; scheduling needs a fallback-to-defaults change.
+
+## 4. Where every piece of state lives
+
+| What | Where | Written by | Used by |
+|---|---|---|---|
+| Host memory, one row per box: boot s, advertised / probed / real-download Mbps, est vs actual ready min, result, own-weights MB, render status, render s, s-per-video-s, peak VRAM, fail note | `ltx2-video-gpu/attempts.csv` in git | "Log attempts" step: commit + push to the dispatched branch (`always()`, never blocks cleanup) | `pick_offers.py` on the next run |
+| Money + outcome, one row per run: credit before / after, spent, attempts, winner, time to up | `ltx2-video-gpu/runs.csv` in git | `log_attempt.py` | you |
+| Render summary per run | `ltx2-video-gpu/render_runs/<ts>_m<machine>.json` in git | same step | you |
+| Images, video, full logs, GPU csv, `results.json`, `deploy.log` | Actions artifact `run-<run_id>`, 30 days | Upload artifact step | you |
+| Live progress | Actions log | deploy polling (every 15 s) and render heartbeat (every 30 s) | you |
+| Time-to-up and spend summary | run Summary page | Health check and Credit steps | you |
+
+Git gets only small JSON/CSV. Videos live in the artifact. Artifact storage is an account-wide pool
+(500 MB on Free for private repos, shared with caches and packages); retention defaults to 90 days
+and is set to 30 here.
+
+## 5. How host memory works (pick_offers.py)
+- Reads `attempts.csv`, keyed by `machine_id` (offer and instance IDs die on destroy).
+- **Per machine**: last measured/advertised speed ratio replaces the default 0.7.
+- **Global**: median ratio and median boot time replace defaults after 3+ samples.
+- **Cooldown**: a machine whose latest row is a failure is skipped for 7 days.
+- **Proven preference**: a machine with any row where `probe_mbps > 0` ranks as 25% cheaper
+  (`PROVEN_DISCOUNT`). Ranking only; `est_run_usd` stays honest.
+- Output: top 5, one per machine, in `/tmp/candidates.json`; the rent loop walks them in order.
+- Net speed history: `adv_down_mbps`, `probe_mbps`, `dl_mbps` columns. Only machines that got far enough to be probed have numbers.
+
+"Good bandwidth" = sustained throughput measured on the box against Hugging Face, not the advertised
+figure. Hosts advertising 4-8 Gbps probed 1-1.4 Gbps in your history; the default bar is 800 Mbps.
+
+## 6. render_test.py (runs on the box)
+
+Per case it runs `wgp.py --process <settings.json> --output-dir <dir>` as its own process group.
+
+| Part | Does | If it were missing |
+|---|---|---|
+| `load_env` | reads `~/.ltx2_env` (python with torch, Wan2GP dir) | wrong python, `import torch` fails |
+| `validate_settings` | JSON parses, has `model_type` + `prompt` | a typo costs a 60 s model load before failing |
+| `stop_app` | kills the Gradio UI, waits for VRAM < 1.5 GB | the UI holds the model; headless run OOMs on 24 GB |
+| `GpuSampler` | every 2 s: VRAM, util, temp (summary in results.json, raw in `<case>_gpu.csv`) | no idea if 24 GB is enough, or if the GPU was idle |
+| `heartbeat` | every 30 s prints elapsed, GPU, last wgp line | Actions log is silent for the whole render |
+| `probe_media` | ffprobe: size, resolution, fps, duration, audio | "a file exists" passes even if it is 3 s long |
+| `quality_checks` | decodes the file; sums black and frozen seconds | an all-black or corrupt file would pass |
+| `model_file_report` | reads Wan2GP's model definition, lists files it wants, checks `ckpts/` | no way to tell if the 67 GB pre-download is used |
+| HF access scan | flags 401/403/"gated" lines in a case log as `hf_access_errors` | a gated-download failure is buried in a log |
+| `add_render_ratio` | elapsed ÷ video seconds, predicts the 30 s run | no cost model |
+| exit code | 0 all ran, 1 a case failed, 3 nothing ran | CI cannot tell |
+
+If the `image` case fails, the long cases are skipped to save GPU hours.
+
+**Reading results.json**: `env.gpu`, `env.model_files`, `env.wan2gp_fetched_own_weights_mb` (a WARNING
+prints above 2000 MB), then per case `status`, `elapsed_s`, `peak_vram_mb`, `mean_util_pct`,
+`max_temp_c`, `ckpts_downloaded_mb`, `requested_frames`, `render_s_per_video_s`,
+`predicted_elapsed_s_from_short` (on `video_30s`), `hf_access_errors`, and per output `width`,
+`height`, `fps`, `duration_s`, `has_audio`, `decode_ok`, `black_s`, `frozen_s`.
+
+## 7. Libraries and tools: why each, what fails without it
+
+| Tool | Used for | Without it |
+|---|---|---|
+| Python stdlib only in `render_test.py`, `pick_offers.py`, `log_attempt.py` | subprocess, threading, json, re, signal, pathlib; csv, statistics, datetime | n/a: no installs, so nothing in the image can break them |
+| `vastai==1.8.3` (runner) | search, create, show, destroy instances, credit | nothing can be rented or destroyed |
+| `ssh` / `scp` | run and copy on the box | no deploy, no results |
+| `curl` | probe, HF check, health check | no bandwidth gate |
+| `huggingface_hub` | gated weight download | no weights |
+| `nvidia-smi` | GPU facts and stats | no VRAM check, no sampler |
+| `ffmpeg` / `ffprobe` | media facts and quality checks | quality checks degrade to "ffmpeg_missing" |
+
+## 8. Failure reasons the system records (`result` column)
+
+| result | Meaning | Typical cause |
+|---|---|---|
+| `create_failed` | offer gone before we could rent it | someone else took it |
+| `never_running` | not `running` within 300 s (image pull counts) | slow or broken host, stuck image pull |
+| `no_ssh` | running, but SSH not answering after ~2 min | host networking / sshd |
+| `slow_probe` | probe below the bar (default 800 Mbps) | advertised speed was a claim; real HF throughput was lower |
+| `deploy_failed` | box passed the probe, but deploy or health failed. `fail_note` holds the last FAIL / Traceback line | script bug, disk, download stall, app crash |
+| `ok` | HTTP 200 reached | n/a |
+
+Claim vs actual is visible per row: `adv_down_mbps` vs `probe_mbps` vs `dl_mbps`, and
+`est_ready_min` vs `ready_min`. `pick_offers.py` already learns the speed ratio from them. It does
+**not yet** learn from est-vs-actual ready time; the data is logged so it can.
+Not classified separately yet: image-pull failure vs host failure inside `never_running`, and render
+failures (`render_status` column, not `result`).
+
+Boot data (15 boxes): every box that came up did so in 40-185 s. The 8 that did not were killed at the
+300 s timeout, so we never learned whether they would have come up at 6-10 min. 300 s is supported by
+the data; stretching to 10 min is not (no evidence they recover, and each wait is billed).
+
+## 9. Spend log
+`runs.csv` and the run Summary page show `credit before -> after` and the difference. `credit` is the
+field the Vast docs show for `vastai show user`. Billing may lag a few minutes after destroy, so judge
+cost by the trend over several runs.
+
+## 10. Runbook
+1. **First run**: `action=run`, `render_test=true`. Read `results.json` (artifact or `render_runs/`):
+   - `model_files` and `wan2gp_fetched_own_weights_mb`: is the pre-downloaded 19B file what the 22B
+     `model_type` uses? If Wan2GP fetched its own, drop `download_weights.py` from the chain (about 7 min saved) or align `model_type`.
+   - Did the 30 s case produce 30 s? Check `duration_s`, `decode_ok`, `black_s`, `frozen_s`.
+2. If a case fails on schema: run with `render_test=false`, `hold_min=30`, open the URL, set the model in the UI,
+   click **Export Settings**, replace the JSON, commit.
+3. **Daily**: dispatch about 40 min before you need it. Worst case is 5 attempts × ~5.4 min + ~11 min.
+4. After any run: Vast console should show 0 instances. If not, `action=destroy_all`.
+
+## 11. Questions and answers
+
+### Reliability and cost
+| Question | Answer |
+|---|---|
+| Is the probe the risk? | No. All 7 boxes that reached it passed (955-1445 Mbps). The risk is boot: 8 of 15 never became usable. Top-5 candidates plus destroy-always handle it. |
+| Can it be "sure shot"? | No. It can only make a failed attempt cheap and automatic: probe before any download, 5 candidates, destroy always, verify zero instances. Start about 40 min early. |
+| Stop vs destroy? | Always destroy. Stopped instances still bill storage and lose their GPU. |
+| Does `pick_offers.py` need inputs? | No. Defaults run it; only `action` is chosen. The model is not an input. |
+| Is a 5 min boot threshold right? | Supported by the data (all successes <= 185 s). See section 8 for the survivorship caveat. |
+| Is `max_ready_min` 15 too low? | It was. It is now a wide 30 min pre-filter; the probe and the 300 s boot timeout are the real gates. |
+
+### Models and Wan2GP
+| Question | Answer |
+|---|---|
+| Why Wan2GP, and does it hurt quality? | Wan2GP is the runner and memory manager. Quality comes from the model, its precision (int8/fp8 vs full), steps and resolution. Whether its quantised files visibly change LTX output is unverified. |
+| Does Wan2GP have its own models? | Yes: Wan, Hunyuan, Flux, Qwen, Z-Image, LTX and others. It auto-downloads the files suited to the GPU generation. |
+| 19B vs 22B? | The workflow pre-downloads `ltx-2-19b-distilled`; Wan2GP's documented example is `ltx2_22B_distilled`. They may be different files, so the 67 GB pre-download may be unused. `render_test.py` reports it (`model_files`, `wan2gp_fetched_own_weights_mb`). |
+| HF agreement? | The preflight proves access to the two gated repos. If Wan2GP fetches its own mirrors they are probably ungated; any 401/403 is now flagged as `hf_access_errors`. |
+| Gemma to LTX-2 handshake? | Wan2GP wires them together. The risk is ours: the files must sit where it looks. `bootstrap.sh` symlinks `ckpts/gemma3` to `/data/gemma3` and its own comment calls that assumption unverified. |
+| Does ckpts growth mean our output? | No. `ckpts/` holds model weights. Outputs go to `--output-dir`. |
+| Model reasoning? | LTX-2 is a video diffusion model and does not reason; Gemma is only its text encoder. What can be tested is prompt adherence: `image.json` carries left/right/front spatial constraints, judge by eye. |
+
+### Settings and rendering
+| Question | Answer |
+|---|---|
+| Export settings every install? | No. Export once and commit the JSON to `render_settings/`. They feed headless mode (`wgp.py --process file.json`). |
+| What is inside? | Keys such as `model_type`, `prompt`, `resolution`, `num_inference_steps`, `video_length` (frames). The three provided files follow Wan2GP's docs examples, not a UI export. |
+| Risk of docs-based settings? | Low. A bad file fails in milliseconds, a wrong model fails fast, the image case runs first. Worst case is a 60 min timeout at about $0.59/hr. |
+| Missing settings file? | SKIPPED, not FAILED: a config gap is not a host fault. With all 3 committed nothing is skipped. |
+| Video length limit? | No documented cap found. Length is `video_length` in the JSON; VRAM does not grow with length but RAM does. |
+| 30 min video in practice | Do not ask one call for 43,000 frames. Pattern: storyboard, N shots of 5-10 s (image-to-video from the previous shot's last frame for continuity), render each, ffmpeg concat (stream copy if codecs match, else re-encode), mix audio. Not built here; each shot would be one more settings JSON. |
+| Render ratio output? | `render_s_per_video_s` and `predicted_elapsed_s_from_short` in `results.json`, plus a `ratio:` line in the Actions log. The short clip is cold (includes model load), so it over-predicts; the real 30 s run is the truth. |
+| Media checks quick? | Yes. ffprobe is under a second; the decode for a 30 s clip takes seconds (10 min timeout). |
+| Can output come back over HTTP? | Gradio is the web UI on :7860; Wan2GP's docs show a Python API that can target the running Gradio queue, but I found no plain REST route for generation. Production pattern: queue, worker, object storage, status polling. |
+
+### Logs, results and learning
+| Question | Answer |
+|---|---|
+| Live logs during render? | Yes: heartbeat every 30 s with elapsed, GPU and the last wgp line. Full case logs are in the artifact. |
+| Deploy-chain logs? | Visible as the last 8 lines per 15 s poll; the full `deploy.log` is pulled before destroy and saved in the artifact. |
+| Where is GpuSampler output? | Per-case summary in `results.json`; raw samples in `<case>_gpu.csv` in the artifact. |
+| `results.json` location? | Artifact, `render_runs/<ts>_m<machine>.json` in git, and `~/results/` on the box until destroy. |
+| Results back ASAP? | Copied right after the render and before destroy; uploaded as an artifact a few steps later. Videos never go to git. |
+| Does the system self-learn? | `attempts.csv` gets render, weights, est-vs-actual and fail-note columns every run; `pick_offers.py` learns host speed ratio, boot time, cooldown and proven hosts from it. |
+| Is `attempts.csv` logged automatically? | Yes, for `run` actions, pushed to the dispatched branch. A failed push only warns. |
+| Is net speed stored per machine? | Yes: advertised, probed and real-download Mbps. |
+| Credit before/after? | Recorded per run in `runs.csv` and the Summary page. |
+
+### Access and operations
+| Question | Answer |
+|---|---|
+| Gradio from my laptop? | Yes. The URL (`http://<host>:<mapped port>/`) is in the run Summary. Use `render_test=false` and `hold_min=30`; the render test stops the UI. Plain HTTP, no login, so anyone with the IP:port can use it while it is up. |
+| Repo visibility and quota? | Visibility: the Public/Private label by the repo name (change under Settings, Danger Zone). Quota: your account's Billing and plans, Actions usage. Each run's artifact: the run page, Artifacts section. |
+| What was fixed along the way? | The render step now runs with `set +e`, because GitHub's default `bash -e` would abort a failed render before its results were pulled. |
+
+## 12. UNVERIFIED (do not rely on these until the first real run confirms them)
+
+| # | Claim | Confidence | How it gets verified |
+|---|---|---|---|
+| 1 | The 19B LTX-2 pre-download is what Wan2GP uses with `ltx2_22B_distilled` | medium (likely different files) | `model_files`, `wan2gp_fetched_own_weights_mb` in the first `results.json` |
+| 2 | Wan2GP auto-downloads files matched to the GPU; its own mirrors are ungated | medium | `hf_access_errors`, `ckpts_downloaded_mb` |
+| 3 | Settings JSON values (`model_type` names, 1280x704, 8 steps, 121 / 721 frames, 24 fps) work as written | medium | first render run; otherwise export from the UI |
+| 4 | LTX-2 accepts a 721-frame (30 s) clip in one call | low | `video_30s` status and `duration_s` |
+| 5 | `qwen_image_20B` for the image case may trigger its own large download | medium | `ckpts_downloaded_mb` on the `image` case |
+| 6 | Wan2GP's quantised files do not visibly degrade LTX output | low | compare outputs by eye |
+| 7 | `credit` is the right field in `vastai show user --raw`; billing lag is small | medium | `runs.csv` `credit_before` / `credit_after` not blank |
+| 8 | Artifact per-file limit (a single third-party page says 500 MB); account quota depends on plan and repo visibility | low | your account's Actions usage view |
+| 9 | ffmpeg log format `black_duration` / `freeze_duration` | medium | `black_s` / `frozen_s` on a real file |
+| 10 | Beyond 5 min boot means a corrupt host (our data cannot show it: boxes were killed at 300 s) | low | only by letting one run longer |
+| 11 | `bootstrap.sh` symlink layout (`ckpts/gemma3`, `ckpts/<file>`) matches what Wan2GP expects | low | `model_files.in_ckpts` |
+| 12 | Wan2GP sliding-window continuation limits for long single outputs | low | not tested |
+| 13 | The 7-day cooldown on 6 machines is unwarranted (their `deploy_failed` rows look like script bugs, not host faults) | judgement | drop `deploy_failed` from `BAD_RESULTS` if you agree |
+| 14 | GitHub menu paths for visibility and quota | medium | menu names may differ by plan |
+| 15 | The workflow YAML has been executed end to end | not done | it only parses and has the right step order; Python scripts were tested on stubs with no GPU |
+
+## 13. Files to add or edit (one checklist)
+
+Copy these into the repo, commit to the branch you dispatch the workflow from.
+
+| Path | Action | What it is |
+|---|---|---|
+| `.github/workflows/ltx2-gpu.yml` | **EDIT (replace)** | adds `render_test` input, credit before/after, pull-logs, artifact upload, `log_attempt.py` call; `min_real_mbps` 800, `max_ready_min` 30, job timeout 180 |
+| `ltx2-video-gpu/scripts/pick_offers.py` | **EDIT (replace)** | adds proven-host ranking and the proven count in the summary |
+| `README.md` | **EDIT (replace)** | one-line pointer to this file |
+| `ltx2-video-gpu/ltx2-video-gpu-readme.md` | **ADD** | this file |
+| `ltx2-video-gpu/scripts/render_test.py` | **ADD** | on-box render cases and stats |
+| `ltx2-video-gpu/scripts/log_attempt.py` | **ADD** | writes `attempts.csv` + `runs.csv` |
+| `ltx2-video-gpu/render_settings/image.json` | **ADD** | settings, still image |
+| `ltx2-video-gpu/render_settings/video_short.json` | **ADD** | settings, short clip |
+| `ltx2-video-gpu/render_settings/video_30s.json` | **ADD** | settings, 30 s clip |
+
+Do **not** overwrite your live `ltx2-video-gpu/attempts.csv` with the copy in the download: it is an
+unchanged snapshot of the zip, and the workflow migrates your real file in place on the next run.
+
+Unchanged, leave alone: `scripts/bootstrap.sh`, `scripts/download_weights.py`, `scripts/preflight.sh`,
+`scripts/probe_bandwidth.sh`, `scripts/start.sh`.
+
+Created automatically by the workflow (do not add by hand): `ltx2-video-gpu/runs.csv`,
+`ltx2-video-gpu/render_runs/*.json`, and the new `attempts.csv` columns.
