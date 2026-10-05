@@ -46,7 +46,20 @@ def read_csv(path, columns):
     if not p.exists() or p.stat().st_size == 0:
         return []
     with open(p, newline="") as f:
-        return [{c: (r.get(c) or "") for c in columns} for r in csv.DictReader(f)]
+        rows = [{c: (r.get(c) or "") for c in columns} for r in csv.DictReader(f)]
+    # A second header line inside the file (two CSV versions concatenated by a merge) is not data.
+    return [r for r in rows if r[columns[0]] != columns[0]]
+
+
+def heal(rows, key_cols):
+    """Drop exact-duplicate attempts (same key), keeping the row with the most filled fields, oldest first.
+    Run 37297908189's attempts.csv held two concatenated copies of the history."""
+    best = {}
+    for r in rows:
+        k = tuple(r[c] for c in key_cols)
+        if k not in best or sum(bool(v) for v in r.values()) > sum(bool(v) for v in best[k].values()):
+            best[k] = r
+    return sorted(best.values(), key=lambda r: r[key_cols[0]])
 
 
 def write_csv(path, columns, rows):
@@ -85,6 +98,11 @@ def render_facts(results_path):
     states = {c["status"] for c in cases.values()}
     ran = any(c["status"] == "SUCCESS" for c in cases.values())
     status = "ok" if ran and states <= PASS_STATES else ("skipped" if states <= {"SKIPPED"} else "failed")
+    bad = next((c for c in cases.values() if c["status"] not in PASS_STATES), None)
+    note = ""
+    if bad and bad.get("failure"):
+        f = bad["failure"]
+        note = re.sub(r"[,\r\n]+", " ", f"render {bad['name']}: {f.get('kind')}: {f.get('exception')} @ {f.get('where')}")[:200]
     final = cases.get("video_30s") or {}
     ratio = final.get("render_s_per_video_s") or (cases.get("video_short") or {}).get("render_s_per_video_s")
     peaks = [c["peak_vram_mb"] for c in cases.values() if c.get("peak_vram_mb")]
@@ -94,6 +112,7 @@ def render_facts(results_path):
         "render_s_per_video_s": ratio or "",
         "peak_vram_mb": max(peaks) if peaks else "",
         "own_weights_mb": data.get("env", {}).get("wan2gp_fetched_own_weights_mb", ""),
+        "fail_note": note,
     }
 
 
@@ -134,6 +153,10 @@ def main():
             "fail_note": "" if healthy else fail_note(os.environ.get("DEPLOY_LOG", "results/deploy.log")),
             **{k: v for k, v in r.items() if v != ""},
         })
+    before_n = len(rows)
+    rows = heal(rows, ["timestamp", "machine_id", "offer_id"])
+    if len(rows) != before_n:
+        print(f"healed attempts.csv: {before_n - len(rows)} duplicate row(s) removed")
     write_csv(attempts_file, COLUMNS, rows)
 
     before, after = fnum(stats.get("CREDIT_BEFORE")), fnum(os.environ.get("CREDIT_AFTER") or stats.get("CREDIT_AFTER"))
