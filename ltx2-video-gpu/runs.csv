@@ -1,2 +1,3 @@
 timestamp,run_id,credit_before,credit_after,spent_usd,attempts,winner_machine,time_to_up_min,result
 2026-10-05T08:50:24Z,37283737745,5.359770418060003,5.294723881560002,0.065,5,,,no_box
+2026-10-05T09:14:38Z,37286450809,5.294334469860003,5.222248047160004,0.0721,5,,,no_box
