@@ -24,8 +24,8 @@ ltx2-video-gpu/
     ├── pick_offers.py                  runner: rank live offers, learn from attempts.csv
     ├── probe_bandwidth.sh              box: real throughput to Hugging Face
     ├── preflight.sh                    box: GPU, VRAM, disk, python, HF reachable
-    ├── bootstrap.sh                    box: find python+torch, download weights, symlink
-    ├── download_weights.py             box: LTX-2 + Gemma download with progress lines
+    ├── bootstrap.sh                    box: find python+torch, (optional) pre-download, Triton patch
+    ├── download_weights.py             box: OPTIONAL pre-download (off by default, PREDOWNLOAD=1)
     ├── start.sh                        box: start Wan2GP on :7860
     ├── render_test.py                  box: run the 3 render cases, collect stats
     └── log_attempt.py                  runner: write attempts.csv + runs.csv
@@ -229,12 +229,44 @@ cost by the trend over several runs.
 | Repo visibility and quota? | Visibility: the Public/Private label by the repo name (change under Settings, Danger Zone). Quota: your account's Billing and plans, Actions usage. Each run's artifact: the run page, Artifacts section. |
 | What was fixed along the way? | The render step now runs with `set +e`, because GitHub's default `bash -e` would abort a failed render before its results were pulled. |
 
+## 11b. First real run (run 37297908189, RTX 5090, machine 74248): what worked and what remains
+
+Timeline (from the logs and artifact): created 10:39:12, running in 116 s, probe 767 Mbps (samples 756 / 774 / 767,
+bar 600), deploy 67.7 GB at 1031 Mbps (525 s), HTTP 200 at 10:51:05 = **11 min 53 s** after create (estimate was 21.9).
+Spend: credit $4.8795 -> $4.4773 = **$0.4023**.
+
+| Area | Result | Evidence |
+|---|---|---|
+| Guard, preflight, search, rent, probe sampling | **worked** | first offer accepted, median of 3 samples |
+| Deploy chain, health check | **worked** | HTTP 200 on poll 4 |
+| Pull logs, cleanup + verify, artifact | **worked** | 6 files, `deploy.log` and GPU csvs present |
+| `attempts.csv` | **updated, but the file on GitHub was corrupted** | two CSV versions concatenated (two header lines, 4 foreign old-format rows). `log_attempt.py` now heals this on the next run |
+| `runs.csv` | **worked** | one row per run since the new workflow; the 08:50, 09:14 and 09:39 runs are in it. Two runs at 10:22 and 10:37 used an older workflow, so they only appear in `attempts.csv` |
+| `render_runs/*.json` | **worked** | `20261005T105820Z_m74248.json` committed and pushed (d809016) |
+| Spend line in the log | **bug, fixed** | printed `spent $unknown` (variables not exported); `runs.csv` had the right 0.4023 |
+| Image case | **skipped: `image.json` is invalid JSON** | missing closing quote on the prompt; reproduced the identical error message. A free lint step now catches it before renting |
+| Video cases | **FAILED: Wan2GP's own Triton kernel** | `models/ltx2/denoiser_triton.py`, `split_rope`: `TypeError: 'constexpr' object is not subscriptable`. Same error in both cases |
+| Pre-downloaded weights | **unused: 67 GB, 525 s, about $0.08 per run** | `ckpts/` held only an empty symlink; Wan2GP then fetched its own 42 GB (LTX-2.3 22B int8, Gemma-3 QAT, VAEs, upscalers) |
+
+**Do we need to download models in bootstrap? No.** `bootstrap.sh` now skips the pre-download by default
+(`PREDOWNLOAD=1` brings it back). Wan2GP downloads what it needs at the first render; that cost about 6 min
+at 1 Gbps and is inside the first case, which is why the case timeouts are now 1500 s.
+
+**The Triton failure is a software mismatch, not a host problem.** A public report (LykosAI/StabilityMatrix #1756:
+RTX 5090, torch 2.7.1+cu128, Triton 3.3.1) shows the same error in the same function, and fixes it by indexing
+`.value` on two `tl.constexpr` objects. Your box has torch 2.7.1+cu128; the Triton version was not captured,
+so `render_test.py` now records package versions. `bootstrap.sh` applies that workaround to `_split_rope` only
+(idempotent, backup `.orig`, prints a `PATCH denoiser_triton:` line in `deploy.log`). Treat it as an experiment.
+
+Still open after this run: the patch working on a real file, the image case (second model download), whether the
+30 s clip completes, whether a 4090 hits the same error, quality and `render_s_per_video_s`.
+
 ## 12. UNVERIFIED (do not rely on these until the first real run confirms them)
 
 | # | Claim | Confidence | How it gets verified |
 |---|---|---|---|
-| 1 | The 19B LTX-2 pre-download is what Wan2GP uses with `ltx2_22B_distilled` | medium (likely different files) | `model_files`, `wan2gp_fetched_own_weights_mb` in the first `results.json` |
-| 2 | Wan2GP auto-downloads files matched to the GPU; its own mirrors are ungated | medium | `hf_access_errors`, `ckpts_downloaded_mb` |
+| 1 | ~~The 19B LTX-2 pre-download is what Wan2GP uses~~ **REFUTED by run 37297908189**: it fetched its own 42 GB | resolved | `ckpts_downloaded_mb` = 42130 |
+| 2 | Wan2GP auto-downloads its own files: **confirmed**. That its mirrors are ungated is still unproven (no `hf_access_errors`, but `HF_TOKEN` was not checked in that shell) | medium | repeat with the token unset |
 | 3 | Settings JSON values (`model_type` names, 1280x704, 8 steps, 121 / 721 frames, 24 fps) work as written | medium | first render run; otherwise export from the UI |
 | 4 | LTX-2 accepts a 721-frame (30 s) clip in one call | low | `video_30s` status and `duration_s` |
 | 5 | `qwen_image_20B` for the image case may trigger its own large download | medium | `ckpts_downloaded_mb` on the `image` case |
@@ -243,11 +275,16 @@ cost by the trend over several runs.
 | 8 | Artifact per-file limit (a single third-party page says 500 MB); account quota depends on plan and repo visibility | low | your account's Actions usage view |
 | 9 | ffmpeg log format `black_duration` / `freeze_duration` | medium | `black_s` / `frozen_s` on a real file |
 | 10 | Beyond 5 min boot means a corrupt host (our data cannot show it: boxes were killed at 300 s) | low | only by letting one run longer |
-| 11 | `bootstrap.sh` symlink layout (`ckpts/gemma3`, `ckpts/<file>`) matches what Wan2GP expects | low | `model_files.in_ckpts` |
+| 11 | ~~`bootstrap.sh` symlink layout matches what Wan2GP expects~~ **moot**: symlinks are no longer created | resolved | n/a |
 | 12 | Wan2GP sliding-window continuation limits for long single outputs | low | not tested |
 | 13 | The 7-day cooldown on 6 machines is unwarranted (their `deploy_failed` rows look like script bugs, not host faults) | judgement | drop `deploy_failed` from `BAD_RESULTS` if you agree |
 | 14 | GitHub menu paths for visibility and quota | medium | menu names may differ by plan |
-| 15 | The workflow YAML has been executed end to end | not done | it only parses and has the right step order; Python scripts were tested on stubs with no GPU |
+| 15 | The workflow has been executed end to end | **partly done**: first run reached the render step | the render, the Triton patch and the new `log_attempt.py` healing have not run on a real box yet; the scripts were tested on stubs and on your real logs |
+| 16 | The Triton workaround (`.value` indexing in `_split_rope`) fixes the crash on your image | low-medium (single third-party report, same error text) | next `run` with `render_test=true`: look for the `PATCH denoiser_triton:` line, then `video_short` status |
+| 17 | Triton 3.3.1 is the version on the box | low (torch 2.7.1 normally pins it; not captured) | `env.packages` in the next `results.json` |
+| 18 | The failure is not specific to the RTX 5090 | unknown | one run on a 4090 |
+| 19 | `image.json` failed because of a missing closing quote | medium (the lint reproduces the identical message by truncating the string) | the lint step on your repo copy |
+| 20 | Case timeouts of 1500 / 1500 / 3000 s cover the first-use downloads on slow hosts | medium | `elapsed_s` vs timeout in `results.json` |
 
 ## 13. Files to add or edit (one checklist)
 
@@ -259,8 +296,9 @@ Copy these into the repo, commit to the branch you dispatch the workflow from.
 | `ltx2-video-gpu/scripts/pick_offers.py` | **EDIT (replace)** | adds proven-host ranking and the proven count in the summary |
 | `README.md` | **EDIT (replace)** | one-line pointer to this file |
 | `ltx2-video-gpu/ltx2-video-gpu-readme.md` | **ADD** | this file |
-| `ltx2-video-gpu/scripts/render_test.py` | **ADD** | on-box render cases and stats |
-| `ltx2-video-gpu/scripts/log_attempt.py` | **ADD** | writes `attempts.csv` + `runs.csv` |
+| `ltx2-video-gpu/scripts/render_test.py` | **ADD / replace** | adds root-cause extraction, package versions, timeouts 1500/1500/3000 |
+| `ltx2-video-gpu/scripts/log_attempt.py` | **ADD / replace** | writes `attempts.csv` + `runs.csv`; heals duplicated files; stores the render root cause in `fail_note` |
+| `ltx2-video-gpu/scripts/bootstrap.sh` | **EDIT (replace)** | pre-download off by default; idempotent Triton workaround |
 | `ltx2-video-gpu/render_settings/image.json` | **ADD** | settings, still image |
 | `ltx2-video-gpu/render_settings/video_short.json` | **ADD** | settings, short clip |
 | `ltx2-video-gpu/render_settings/video_30s.json` | **ADD** | settings, 30 s clip |
@@ -268,8 +306,15 @@ Copy these into the repo, commit to the branch you dispatch the workflow from.
 Do **not** overwrite your live `ltx2-video-gpu/attempts.csv` with the copy in the download: it is an
 unchanged snapshot of the zip, and the workflow migrates your real file in place on the next run.
 
-Unchanged, leave alone: `scripts/bootstrap.sh`, `scripts/download_weights.py`, `scripts/preflight.sh`,
+Unchanged, leave alone: `scripts/download_weights.py` (kept for `PREDOWNLOAD=1`), `scripts/preflight.sh`,
 `scripts/probe_bandwidth.sh`, `scripts/start.sh`.
+
+**Workflow caution:** your repo's workflow and `probe_bandwidth.sh` already differ from the ones I delivered (the logs show
+`SAMPLES=` and a 600 Mbps bar), so do not blindly replace them. Apply these 3 changes to your copy, or diff against
+the delivered `ltx2-gpu.yml`:
+1. Step "Credit after + spend": `source /tmp/run_stats.env` becomes `set -a; source /tmp/run_stats.env; set +a`.
+2. New step before "Credit before": "Lint render settings (free)", copied from the delivered file.
+3. Timeouts: render step `timeout-minutes: 110`, job `timeout-minutes: 200`.
 
 Created automatically by the workflow (do not add by hand): `ltx2-video-gpu/runs.csv`,
 `ltx2-video-gpu/render_runs/*.json`, and the new `attempts.csv` columns.
