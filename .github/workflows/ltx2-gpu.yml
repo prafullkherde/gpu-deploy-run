@@ -252,7 +252,7 @@ jobs:
             if [ "$RESULT" = "slow_probe" ]; then
               printf '%s' "$HF_TOKEN_VALUE" | ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "$PORT" root@"$HOST" 'cat > ~/.hf_token && chmod 600 ~/.hf_token' || true
               scp $SSH_OPTS -i ~/.ssh/deploy_key -P "$PORT" "$PROJECT_DIR"/scripts/probe_bandwidth.sh root@"$HOST":~/ || true
-              PROBE_LINE=$(ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "$PORT" root@"$HOST" 'bash ~/probe_bandwidth.sh' < /dev/null | tail -1 || true)
+              PROBE_LINE=$(timeout 240 ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "$PORT" root@"$HOST" 'bash ~/probe_bandwidth.sh' < /dev/null | tail -1 || true)
               PROBE=$(echo "$PROBE_LINE" | grep -oE 'PROBE_MBPS=[0-9]+' | grep -oE '[0-9]+' || echo 0)
               echo "  probe: ${PROBE_LINE:-no output} | advertised ${ADV_DOWN} Mbps | bar ${NEED} Mbps"
               if [ "$PROBE" -ge "$NEED" ]; then RESULT=ok; fi
