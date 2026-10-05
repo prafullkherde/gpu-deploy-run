@@ -88,7 +88,7 @@ def calibrate(rows):
         last[str(r.get("machine_id"))] = r
     # "Proven" = some past box on this machine booted, accepted SSH and passed the real HF probe.
     # Independent of later deploy_failed rows, which were script bugs, not host faults.
-    proven = {str(x.get("machine_id")) for x in rows if fnum(x.get("probe_mbps")) > 0}
+    proven = {str(x.get("machine_id")) for x in rows if x.get("result") in {"ok", "deploy_failed"} and fnum(x.get("probe_mbps")) > 0}
     return eff, boot, last, len(ratios), len(boots), proven
 
 
