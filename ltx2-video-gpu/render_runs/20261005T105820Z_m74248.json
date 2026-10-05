@@ -1,0 +1,56 @@
+{
+  "env": {
+    "gpu": "NVIDIA GeForce RTX 5090, 580.126.09, 32607 MiB",
+    "disk_free": "overlay         120G   64G   57G  53% /",
+    "ckpts_before": "0\t/opt/workspace-internal/Wan2GP/ckpts/gemma3",
+    "data_before": "64G\t/data",
+    "model_files": {
+      "ltx2_22B_distilled": {
+        "definition": "/opt/workspace-internal/Wan2GP/defaults/ltx2_22B_distilled.json",
+        "files": [
+          "ltx-2.3-22b-distilled_diffusion_model.safetensors",
+          "ltx-2.3-22b-distilled_diffusion_model_quanto_int8.safetensors"
+        ],
+        "in_ckpts": {
+          "ltx-2.3-22b-distilled_diffusion_model.safetensors": false,
+          "ltx-2.3-22b-distilled_diffusion_model_quanto_int8.safetensors": false
+        }
+      }
+    },
+    "wan2gp_fetched_own_weights_mb": 42130,
+    "ckpts_after": "13G\t/opt/workspace-internal/Wan2GP/ckpts/gemma-3-12b-it-qat-q4_0-unquantized\n0\t/opt/workspace-internal/Wan2GP/ckpts/gemma3\n19G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b-distilled_diffusion_model_quanto_int8.safetensors\n13M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b-ic-lora-hdr-scene-emb.safetensors\n102M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_audio_vae.safetensors\n3.8G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_embeddings_connector.safetensors\n2.2G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_text_embedding_projection.safetensors\n1.4G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_vae.safetensors\n247M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_vocoder.safetensors\n950M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-spatial-upscaler-x2-1.1.safetensors\n250M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-temporal-upscaler-x2-1.0.safetensors"
+  },
+  "cases": [
+    {
+      "name": "image",
+      "status": "SKIPPED",
+      "detail": "/root/render_settings/image.json: invalid JSON: Unterminated string starting at: line 1 column 44 (char 43)"
+    },
+    {
+      "name": "video_short",
+      "status": "FAILED",
+      "exit_code": 1,
+      "elapsed_s": 392.7,
+      "requested_frames": 121,
+      "ckpts_downloaded_mb": 42130,
+      "outputs": [],
+      "peak_vram_mb": 3522,
+      "mean_util_pct": 0,
+      "max_temp_c": 47,
+      "log_tail": " = i // (WIDTH // 2) // TOKENS\\n    head, local = f // HALF, f % HALF\\n    offset = batch * BATCH_STRIDE + token * WIDTH + head * HALF * 2 + local\\n    axis = (f - PAD) % AXES\\n    col = (f - PAD) // AXES\\n    c = tl.full((BLOCK,), 1.0, tl.float32)\\n    s = tl.full((BLOCK,), 0.0, tl.float32)\\n    for a in tl.static_range(AXES):\\n        divisor = 1\\n        for j in tl.static_range(len(GRID)):\\n            if j > AXIS_IDS[a]:\\n                   ^\\nTypeError(\"\\'constexpr\\' object is not subscriptable\")\\''\n\n==================================================\nQueue completed: 0/1 tasks in 6m 23s\n"
+    },
+    {
+      "name": "video_30s",
+      "status": "FAILED",
+      "exit_code": 1,
+      "elapsed_s": 25.8,
+      "requested_frames": 721,
+      "ckpts_downloaded_mb": 0,
+      "outputs": [],
+      "peak_vram_mb": 3342,
+      "mean_util_pct": 3,
+      "max_temp_c": 48,
+      "log_tail": "h = i // (WIDTH // 2) // TOKENS\\n    head, local = f // HALF, f % HALF\\n    offset = batch * BATCH_STRIDE + token * WIDTH + head * HALF * 2 + local\\n    axis = (f - PAD) % AXES\\n    col = (f - PAD) // AXES\\n    c = tl.full((BLOCK,), 1.0, tl.float32)\\n    s = tl.full((BLOCK,), 0.0, tl.float32)\\n    for a in tl.static_range(AXES):\\n        divisor = 1\\n        for j in tl.static_range(len(GRID)):\\n            if j > AXIS_IDS[a]:\\n                   ^\\nTypeError(\"\\'constexpr\\' object is not subscriptable\")\\''\n\n==================================================\nQueue completed: 0/1 tasks in 15.8s\n"
+    }
+  ]
+}
