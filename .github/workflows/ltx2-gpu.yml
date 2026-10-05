@@ -89,7 +89,7 @@ env:
 jobs:
   gpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 200
     env:
       VAST_KEY: ${{ secrets.LTX2_GPU_VAST_API_KEY }}
       HF_TOKEN_VALUE: ${{ secrets.LTX2_GPU_HF_TOKEN }}
@@ -132,6 +132,25 @@ jobs:
             vastai show instances --api-key "$VAST_KEY"
             exit 1
           fi
+
+      - name: Lint render settings (free, before any GPU is rented)
+        if: ${{ github.event.inputs.action == 'run' && github.event.inputs.render_test == 'true' }}
+        run: |
+          # Run 37297908189 paid for a box and only then learned image.json had a missing quote.
+          python3 - <<'PY'
+          import json, pathlib, sys
+          bad = 0
+          for f in sorted(pathlib.Path("ltx2-video-gpu/render_settings").glob("*.json")):
+              try:
+                  d = json.loads(f.read_text())
+                  missing = [k for k in ("model_type", "prompt") if k not in d]
+                  assert not missing, f"missing keys {missing}"
+                  print(f"ok   {f.name}: {d['model_type']}, video_length={d.get('video_length', '-')}")
+              except Exception as e:
+                  bad += 1
+                  print(f"::error file={f}::{f.name}: {e}")
+          sys.exit(1 if bad or not list(pathlib.Path("ltx2-video-gpu/render_settings").glob("*.json")) else 0)
+          PY
 
       - name: Credit before
         if: ${{ github.event.inputs.action == 'run' }}
@@ -252,7 +271,7 @@ jobs:
             if [ "$RESULT" = "slow_probe" ]; then
               printf '%s' "$HF_TOKEN_VALUE" | ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "$PORT" root@"$HOST" 'cat > ~/.hf_token && chmod 600 ~/.hf_token' || true
               scp $SSH_OPTS -i ~/.ssh/deploy_key -P "$PORT" "$PROJECT_DIR"/scripts/probe_bandwidth.sh root@"$HOST":~/ || true
-              PROBE_LINE=$(timeout 240 ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "$PORT" root@"$HOST" 'bash ~/probe_bandwidth.sh' < /dev/null | tail -1 || true)
+              PROBE_LINE=$(ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "$PORT" root@"$HOST" 'bash ~/probe_bandwidth.sh' < /dev/null | tail -1 || true)
               PROBE=$(echo "$PROBE_LINE" | grep -oE 'PROBE_MBPS=[0-9]+' | grep -oE '[0-9]+' || echo 0)
               echo "  probe: ${PROBE_LINE:-no output} | advertised ${ADV_DOWN} Mbps | bar ${NEED} Mbps"
               if [ "$PROBE" -ge "$NEED" ]; then RESULT=ok; fi
@@ -381,7 +400,7 @@ jobs:
 
       - name: Render test — image + short clip + 30 s video on the live box, pull results
         if: ${{ github.event.inputs.action == 'run' && github.event.inputs.render_test == 'true' }}
-        timeout-minutes: 90
+        timeout-minutes: 110
         run: |
           # GitHub runs `bash -e` by default; turn it off so a failing render still reaches the scp that
           # pulls results before cleanup destroys the box.
@@ -455,7 +474,7 @@ jobs:
         run: |
           CREDIT=$(vastai show user --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(json.load(sys.stdin).get('credit',''))" 2>/dev/null || true)
           echo "CREDIT_AFTER=$CREDIT" >> /tmp/run_stats.env
-          source /tmp/run_stats.env
+          set -a; source /tmp/run_stats.env; set +a   # export, or python's os.environ cannot see the values
           SPENT=$(python3 -c "import os; b,a=os.environ.get('CREDIT_BEFORE'),os.environ.get('CREDIT_AFTER'); print(round(float(b)-float(a),4) if b and a else 'unknown')")
           echo "Credit: \$${CREDIT_BEFORE:-?} -> \$${CREDIT_AFTER:-?}  spent \$${SPENT} (billing can lag a few minutes; runs.csv keeps the number)"
           echo "### Spend: \$${SPENT} (credit \$${CREDIT_BEFORE:-?} -> \$${CREDIT_AFTER:-?})" >> "$GITHUB_STEP_SUMMARY"
