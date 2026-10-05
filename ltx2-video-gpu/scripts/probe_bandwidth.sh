@@ -8,6 +8,7 @@
 #
 # Last stdout line: PROBE_MBPS=<n> BYTES=<got>/<want> SECS=<t> CODES=<http codes>
 # PROBE_MBPS=0 means the probe itself failed (no token, bad HTTP code, no bytes).
+#
 #!/bin/bash
 # Runs ON the rented box. Median of N rounds against the real HF file.
 # Last line: PROBE_MBPS=<median> SAMPLES=<a,b,c> CODES=<http codes>  (0 = probe failed)
