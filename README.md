@@ -261,6 +261,98 @@ so `render_test.py` now records package versions. `bootstrap.sh` applies that wo
 Still open after this run: the patch working on a real file, the image case (second model download), whether the
 30 s clip completes, whether a 4090 hits the same error, quality and `render_s_per_video_s`.
 
+## 11c. Second run (first success): every task, timed
+
+Box: machine 143802, RTX 5090, $0.5556/hr. Probe 833 Mbps (samples 844 / 803 / 833, bar 600). Spend **$0.2901**
+(credit $4.4555 -> $4.1653). All times are from the Actions log (UTC, 11:33 to 11:57).
+
+| Stage | Time | What it was |
+|---|---|---|
+| Rent: create, boot, SSH, 3-sample probe | 2 min 47 s | first offer accepted |
+| Deploy (no pre-download any more) | 21 s | was 525 s in run 1 |
+| App answering | 12 s | HTTP 200 on poll 2 |
+| **Create to usable** | **about 3.5 min** | run 1: 11 min 53 s; estimate was 20.1 min |
+| Image, 1024x1024 (Qwen-Image 20B) | 291 s | mostly Wan2GP's own 30.7 GB download and load; the render itself was the last part |
+| Video 5 s, 1280x704 (LTX-2.3 22B distilled) | 416 s | mostly its own 42.1 GB download (about 6 min at 1 Gbps); the render after load was about 55 s |
+| **Video 30 s, 1280x704, warm** | **186 s** | 2 sliding windows: about 120 s + 60 s; **6.2 s of wall time per video second**, about $0.03 |
+| Render step total | 896 s | 15 min, of which about 10 min was model download |
+| Hold | 5 min | wasted: the app had been stopped (see below) |
+
+Answers drawn from this run:
+- **How long a video, in what time?** A 30.04 s clip at 1280x704 in 186 s on an RTX 5090, once the model is on the box.
+  A 30 min video at that speed is about 3.1 hours of rendering, ignoring stitching and continuity problems.
+- **The cold prediction was wrong by 13x.** The old script predicted 2477 s for the 30 s clip from the 5 s clip; the
+  5 s clip carried the download. `render_test.py` now reports a ratio only for warm cases (nothing downloaded inside them).
+- **Why two video files?** Sliding-window renders save each window: the 20.04 s file is a partial, the 30.04 s file is final.
+  `results.json` now marks the longest as `final_output`.
+- **Why 20 to 40 MB?** File size is bitrate times duration. 20 MB over 20 s is about 8 Mbps and 40 MB over 30 s is about 10.7 Mbps
+  (your sizes; `bitrate_mbps` is now logged). That is a high bitrate for 720p, which is typically a few Mbps. It reflects the
+  encoder quality setting and the fine grain in generated video, not better content. A smaller file is possible with a
+  re-encode (for example H.264 at CRF 20 to 23), but that is a delivery choice, not a quality gain.
+- **The Hold URL refused connections** because `render_test.py` stops the Gradio app to free VRAM and nothing started it again.
+  The Hold step now restarts it (`start.sh`) when `render_test=true` and waits for HTTP 200 before printing the URL.
+- **The Triton workaround held.** The same image (torch 2.7.1+cu128, Triton 3.3.1, mmgp 3.8.2) failed run 1 at the first
+  denoise step and passed here. `render_test.py` now prints the `PATCH denoiser_triton:` line from `deploy.log` as `env.triton_patch`.
+  The patch line itself was not in the logs you sent (the Actions log shows only the last 8 lines per poll), so confirm it in the artifact.
+
+### What the Triton fix is (what, why, how)
+- **What:** LTX-2 inside Wan2GP applies rotary position embeddings (RoPE) with a custom GPU kernel written in Triton.
+  Every attention layer calls it, so a compile error there kills the render at the first step.
+- **Why it failed:** the kernel indexes two `tl.constexpr` values (`GRID`, `AXIS_IDS`) directly. Triton 3.3.1 on this image
+  does not allow that, so it raises `TypeError: 'constexpr' object is not subscriptable`.
+- **How we fixed it:** `bootstrap.sh` rewrites those two indexing sites inside `_split_rope` only, from `AXIS_IDS[a]` to
+  `AXIS_IDS.value[a]` and from `GRID[j]` to `GRID.value[j]`. It is idempotent and keeps a `.orig` backup. A third-party report
+  showed the same change fixing the same error; this run is the first independent confirmation on your image.
+
+### PREDOWNLOAD
+Default is set in `bootstrap.sh`: `PREDOWNLOAD="${PREDOWNLOAD:-0}"`, so the pre-download is off. To override, run the workflow
+with input **predownload = true**; the Deploy step passes `PREDOWNLOAD=1` to the box. (Before this change there was no way to
+override it without editing the script.)
+
+### Selection and probe
+- Instance selection: **fine**. Both successful runs were the first-ranked offer on an RTX 5090 advertising 850 to 950 Mbps.
+- Probe: **fine**. It reads about 20 to 25% below the real download (767 vs 1031 Mbps in run 1), so a pass is conservative.
+  The 3-sample median is the right size; more samples add seconds, not accuracy.
+- `weights_gb` default is now 73 (measured: 42.1 GB LTX-2.3 + 30.7 GB Qwen-Image). It only feeds the readiness estimate.
+
+## 11d. What worked, what still needs work
+
+| Worked | Still open |
+|---|---|
+| Rent, probe, deploy, health, render, artifact, credit, git ledger | Prompts are basic, so output is basic (see 11e) |
+| Image, 5 s and 30 s video all rendered | No visual quality check beyond decode, black and frozen frames |
+| 30 s in 186 s warm | Weights re-download on every fresh box (about 6 min for LTX alone) |
+| Triton workaround | Image case pulls a second 31 GB model for one still |
+| | 30 s clip is 2 sliding windows: continuity at the seam is unchecked |
+| | Output bitrate is high; no delivery re-encode step |
+
+"Load the model upfront" was wrong in *which* files (Wan2GP uses its own), not in principle: the weights must be on the box
+before the render either way. The only real ways to remove that 6 min are persistent storage, a pre-baked image, or a
+host that already holds the files. None is built.
+
+## 11e. Missing parts of image and video generation, and what Seedance uses
+
+Public facts about Seedance (ByteDance Seed; the weights are not released):
+- Seedance 1.0 is a diffusion transformer on VAE latents with decoupled spatial and temporal layers, text conditioning from a
+  fine-tuned decoder-only LLM, and multi-shot and image-to-video handled in one model.
+- Post-training uses supervised fine-tuning plus video-specific RLHF.
+- Inference is sped up about 10x with multi-stage distillation; the report cites a 5 s 1080p clip in 41.4 s on an NVIDIA L20.
+- Later versions add joint audio-video generation (1.5 Pro) and reference-image control (2.0, per a third-party wiki).
+
+Where our setup differs and what to add, in order of likely payoff. Items marked (general) come from common practice, not from these logs.
+
+| Gap | Today | Candidate change |
+|---|---|---|
+| Prompt detail | one short sentence | structured prompts: subject, setting, camera move, lighting, style, audio. Biggest lever for "detail" (general) |
+| Resolution | 1280x704 | try 1920x1088 and check VRAM; the log shows a 2-phase pipeline with spatial and temporal x2 upscaler files already downloaded |
+| Model variant | distilled, 8 steps | Wan2GP lists LTX2 DEV presets (Vanilla Dev, HQ mode) with tunable settings; slower, likely higher quality |
+| Multi-shot / continuity | single prompt | one prompt per shot; start each shot from the previous last frame (image-to-video) |
+| Subject consistency | none | generate a reference image first (the image case), then use it as the first frame |
+| Candidates | one seed | 3 to 4 seeds, pick the best (general) |
+| Audio | model default | an explicit audio description in the prompt; check `has_audio` |
+| Delivery | raw encoder output | re-encode to a sane bitrate; optional frame interpolation |
+| Quality gate | decode, black, frozen | add a vision-model or manual review step; prompt adherence is not measured |
+
 ## 12. UNVERIFIED (do not rely on these until the first real run confirms them)
 
 | # | Claim | Confidence | How it gets verified |
@@ -280,11 +372,14 @@ Still open after this run: the patch working on a real file, the image case (sec
 | 13 | The 7-day cooldown on 6 machines is unwarranted (their `deploy_failed` rows look like script bugs, not host faults) | judgement | drop `deploy_failed` from `BAD_RESULTS` if you agree |
 | 14 | GitHub menu paths for visibility and quota | medium | menu names may differ by plan |
 | 15 | The workflow has been executed end to end | **partly done**: first run reached the render step | the render, the Triton patch and the new `log_attempt.py` healing have not run on a real box yet; the scripts were tested on stubs and on your real logs |
-| 16 | The Triton workaround (`.value` indexing in `_split_rope`) fixes the crash on your image | low-medium (single third-party report, same error text) | next `run` with `render_test=true`: look for the `PATCH denoiser_triton:` line, then `video_short` status |
-| 17 | Triton 3.3.1 is the version on the box | low (torch 2.7.1 normally pins it; not captured) | `env.packages` in the next `results.json` |
-| 18 | The failure is not specific to the RTX 5090 | unknown | one run on a 4090 |
+| 16 | The Triton workaround (`.value` indexing in `_split_rope`) fixes the crash | medium-high: run 2 passed on the same image after failing in run 1; the `PATCH` line itself was not in the logs sent | `env.triton_patch` in `results.json` (now printed) |
+| 17 | ~~Triton 3.3.1 is the version on the box~~ **confirmed**: torch 2.7.1+cu128, triton 3.3.1, mmgp 3.8.2, gradio 5.29.0 | resolved | `env.packages` |
+| 18 | The patch also works on an RTX 4090 and A100 | unknown (both successes so far were RTX 5090) | one run on a 4090 |
 | 19 | `image.json` failed because of a missing closing quote | medium (the lint reproduces the identical message by truncating the string) | the lint step on your repo copy |
-| 20 | Case timeouts of 1500 / 1500 / 3000 s cover the first-use downloads on slow hosts | medium | `elapsed_s` vs timeout in `results.json` |
+| 20 | Case timeouts of 1500 / 1500 / 3000 s cover the first-use downloads on slow hosts | medium (run 2 used 291 / 416 / 186 s at about 1 Gbps; a 400 Mbps host would take roughly 2.5x on the download part) | `elapsed_s` vs timeout |
+| 21 | The 30 s clip is visually continuous across its two sliding windows | unknown | watch the seam near 20 s; `frozen_s`, `black_s` do not measure continuity |
+| 22 | Seedance 2.0 capabilities (a third-party wiki, not the technical report) | low | primary source: seed.bytedance.com |
+| 23 | General-practice items in 11e (structured prompts, seeds, CRF re-encode) improve quality here | medium, untested on this stack | one comparison run each |
 
 ## 13. Files to add or edit (one checklist)
 
@@ -292,11 +387,11 @@ Copy these into the repo, commit to the branch you dispatch the workflow from.
 
 | Path | Action | What it is |
 |---|---|---|
-| `.github/workflows/ltx2-gpu.yml` | **EDIT (replace)** | adds `render_test` input, credit before/after, pull-logs, artifact upload, `log_attempt.py` call; `min_real_mbps` 800, `max_ready_min` 30, job timeout 180 |
+| `.github/workflows/ltx2-gpu.yml` | **EDIT (replace)** | adds `render_test` and `predownload` inputs, credit before/after, pull-logs, artifact upload, `log_attempt.py` call, lint step, hold restarts the app; `weights_gb` 73, `min_real_mbps` 800, `max_ready_min` 30 |
 | `ltx2-video-gpu/scripts/pick_offers.py` | **EDIT (replace)** | adds proven-host ranking and the proven count in the summary |
 | `README.md` | **EDIT (replace)** | one-line pointer to this file |
 | `ltx2-video-gpu/ltx2-video-gpu-readme.md` | **ADD** | this file |
-| `ltx2-video-gpu/scripts/render_test.py` | **ADD / replace** | adds root-cause extraction, package versions, timeouts 1500/1500/3000 |
+| `ltx2-video-gpu/scripts/render_test.py` | **ADD / replace** | root-cause extraction, package versions, Triton patch status, warm-only ratio, bitrate and `final_output`, timeouts 1500/1500/3000 |
 | `ltx2-video-gpu/scripts/log_attempt.py` | **ADD / replace** | writes `attempts.csv` + `runs.csv`; heals duplicated files; stores the render root cause in `fail_note` |
 | `ltx2-video-gpu/scripts/bootstrap.sh` | **EDIT (replace)** | pre-download off by default; idempotent Triton workaround |
 | `ltx2-video-gpu/render_settings/image.json` | **ADD** | settings, still image |
@@ -315,6 +410,8 @@ the delivered `ltx2-gpu.yml`:
 1. Step "Credit after + spend": `source /tmp/run_stats.env` becomes `set -a; source /tmp/run_stats.env; set +a`.
 2. New step before "Credit before": "Lint render settings (free)", copied from the delivered file.
 3. Timeouts: render step `timeout-minutes: 110`, job `timeout-minutes: 200`.
+4. Hold step: restart the app (`ssh ... 'cd ~ && nohup bash start.sh ...'`) when `render_test` is true, then wait for HTTP 200.
+5. New input `predownload` and `export ... PREDOWNLOAD=$PREDL` in the Deploy ssh command.
 
 Created automatically by the workflow (do not add by hand): `ltx2-video-gpu/runs.csv`,
 `ltx2-video-gpu/render_runs/*.json`, and the new `attempts.csv` columns.
