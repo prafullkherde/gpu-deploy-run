@@ -16,10 +16,8 @@ ltx2-video-gpu/
 ├── attempts.csv                        host memory, one row per box tried (auto-written)
 ├── runs.csv                            money + outcome, one row per run (auto-written)
 ├── render_runs/<ts>_m<machine>.json    render summary per run (auto-written)
-├── render_settings/
-│   ├── image.json                      Wan2GP settings: one still
-│   ├── video_short.json                Wan2GP settings: short clip (121 frames)
-│   └── video_30s.json                  Wan2GP settings: 30 s clip (721 frames at 24 fps)
+├── render_suite/
+│   └── cases.json                      THE test manifest: 10 images + 10 videos (+ 3 sub-clips, 1 stitch) and 4 optional extras
 └── scripts/
     ├── pick_offers.py                  runner: rank live offers, learn from attempts.csv
     ├── probe_bandwidth.sh              box: real throughput to Hugging Face
@@ -27,7 +25,9 @@ ltx2-video-gpu/
     ├── bootstrap.sh                    box: find python+torch, (optional) pre-download, Triton patch
     ├── download_weights.py             box: OPTIONAL pre-download (off by default, PREDOWNLOAD=1)
     ├── start.sh                        box: start Wan2GP on :7860
-    ├── render_test.py                  box: run the 3 render cases, collect stats
+    ├── render_test.py                  box: run the suite, collect stats, thumbnails, report
+    ├── run_remote_suite.sh             runner: start render_test.py detached on the box, stream its output
+    ├── lint_suite.py                   runner: free check of cases.json before any GPU is rented
     └── log_attempt.py                  runner: write attempts.csv + runs.csv
 ```
 
@@ -63,11 +63,13 @@ pulled back **before** destroy.
 | max_ready_min | 30 | wide pre-filter on the ESTIMATED ready time. Estimates are rough; the real gates are the 5 min boot timeout and the probe |
 | min_real_mbps | 800 | bar for the on-box probe. `auto` derives it from max_ready_min |
 | max_dph | 0.60 | $/hr ceiling incl. disk |
-| render_test | false | run the 3 render cases after HTTP 200 |
+| render_test | false | run the render suite after HTTP 200 |
+| suite_tier | smoke | `smoke` 3 cases, `standard` your 10 images + 10 videos (23 cases), `full` + 4 extras (see 11f) |
+| predownload | false | also pre-download the old 67 GB set (never used by Wan2GP) |
 | hold_min | 0 | keep box up N min for manual use (the render test stops the UI, so use one or the other) |
 | wan2gp_image | pinned tag | change only deliberately |
 
-The **model is not an input**: it comes from `model_type` inside `render_settings/*.json`.
+The **model is not an input**: it comes from `model_type` inside each case of `render_suite/cases.json`.
 The workflow runs on manual dispatch only. A cron `schedule` event carries no inputs, so every
 `if: inputs.action == ...` step would be skipped; scheduling needs a fallback-to-defaults change.
 
@@ -101,29 +103,34 @@ figure. Hosts advertising 4-8 Gbps probed 1-1.4 Gbps in your history; the defaul
 
 ## 6. render_test.py (runs on the box)
 
-Per case it runs `wgp.py --process <settings.json> --output-dir <dir>` as its own process group.
+It reads `render_suite/cases.json`, keeps the cases of the chosen tier, and runs them one at a time with
+`wgp.py --process <settings.json> --output-dir <dir>`, each as its own process group. The runner starts it
+detached (`run_remote_suite.sh`), so a dropped SSH connection cannot kill an hour-long suite.
 
 | Part | Does | If it were missing |
 |---|---|---|
-| `load_env` | reads `~/.ltx2_env` (python with torch, Wan2GP dir) | wrong python, `import torch` fails |
-| `validate_settings` | JSON parses, has `model_type` + `prompt` | a typo costs a 60 s model load before failing |
-| `stop_app` | kills the Gradio UI, waits for VRAM < 1.5 GB | the UI holds the model; headless run OOMs on 24 GB |
-| `GpuSampler` | every 2 s: VRAM, util, temp (summary in results.json, raw in `<case>_gpu.csv`) | no idea if 24 GB is enough, or if the GPU was idle |
-| `heartbeat` | every 30 s prints elapsed, GPU, last wgp line | Actions log is silent for the whole render |
-| `probe_media` | ffprobe: size, resolution, fps, duration, audio | "a file exists" passes even if it is 3 s long |
-| `quality_checks` | decodes the file; sums black and frozen seconds | an all-black or corrupt file would pass |
-| `model_file_report` | reads Wan2GP's model definition, lists files it wants, checks `ckpts/` | no way to tell if the 67 GB pre-download is used |
-| HF access scan | flags 401/403/"gated" lines in a case log as `hf_access_errors` | a gated-download failure is buried in a log |
-| `add_render_ratio` | elapsed ÷ video seconds, predicts the 30 s run | no cost model |
-| exit code | 0 all ran, 1 a case failed, 3 nothing ran | CI cannot tell |
+| tier filter, `needs` | picks cases by tier; an image-to-video case gets its start image from an earlier case's output | no comparison between a prompt and its image-to-video |
+| `model_catalog`, `model_candidates` | lists `defaults/*.json` stems on the box; a case with candidates uses the first one that exists, else it is SKIPPED with the catalog hint | a wrong model name wastes a case; now it is a one-line SKIPPED |
+| cold bonus | the first case of each model gets +1500 s timeout (its own download) | the cold download would trip the timeout |
+| `stop_app` | kills the Gradio UI, waits for VRAM < 1.5 GB | the UI holds the model; headless run OOMs |
+| `GpuSampler` | every 2 s: VRAM, util, temp (summary in results.json, raw in `<case>_gpu.csv`) | no idea if the GPU is enough or idle |
+| `heartbeat` | every 30 s: elapsed, GPU, last wgp line | the Actions log is silent during a render |
+| `probe_media` | ffprobe: size, resolution, fps, duration, audio, bitrate | "a file exists" passes even if it is 3 s long |
+| `quality_checks` | decodes the file; sums black, frozen and silent seconds | all-black, frozen or silent output would pass |
+| seed check | compares the requested seed with the one in the output file name (`seed_honored`) | silent loss of reproducibility |
+| partial cleanup | sliding windows leave a partial (20 s) next to the final (30 s); partials are deleted unless `KEEP_PARTIALS=1` | double the artifact size |
+| delivery re-encode | H.264 CRF 21 copy (`delivery.mp4`), size and time recorded; `DELIVERY=0` skips it | no data on the "20 to 40 MB" question |
+| thumbnails | image: 640 px; video: a 6-frame strip across the clip (look for seams and drift) | judging 31 cases means opening 31 files |
+| failure policy | OOM and other errors fail only their case; a Triton or download failure skips the remaining cases of that model | 20 cases fail one by one at 30 s each |
+| budget | stops starting new cases after `SUITE_BUDGET_MIN` (40 / 90 / 150 min by tier) | a surprise 4-hour bill |
+| reports | `results.json`, `report.md` (also appended to the run Summary), `index.html` with thumbnails and settings | no overview |
+| exit code | 0 if the 3 smoke cases pass; 1 if one fails or nothing succeeded; 3 if nothing ran | exploratory failures at 2K or on other models do not turn the run red |
 
-If the `image` case fails, the long cases are skipped to save GPU hours.
-
-**Reading results.json**: `env.gpu`, `env.model_files`, `env.wan2gp_fetched_own_weights_mb` (a WARNING
-prints above 2000 MB), then per case `status`, `elapsed_s`, `peak_vram_mb`, `mean_util_pct`,
-`max_temp_c`, `ckpts_downloaded_mb`, `requested_frames`, `render_s_per_video_s`,
-`predicted_elapsed_s_from_short` (on `video_30s`), `hf_access_errors`, and per output `width`,
-`height`, `fps`, `duration_s`, `has_audio`, `decode_ok`, `black_s`, `frozen_s`.
+**Reading results.json**: `env` (gpu, packages, `triton_patch`, `model_catalog`, `model_files`,
+`wan2gp_fetched_own_weights_mb`, `suite_elapsed_s`, `results_dir_mb`), then per case: `status`, `elapsed_s`, `cost_usd`,
+`warm`, `ckpts_downloaded_mb`, `peak_vram_mb`, `mean_util_pct`, `render_s_per_video_s` (warm video cases only),
+`seed_honored`, `failure {kind, exception, where}`, `hf_access_errors`, and `output {width, height, fps, duration_s,
+bitrate_mbps, has_audio, decode_ok, black_s, frozen_s, silent_s, delivery_mb, delivery_mbps}`.
 
 ## 7. Libraries and tools: why each, what fails without it
 
@@ -164,7 +171,7 @@ field the Vast docs show for `vastai show user`. Billing may lag a few minutes a
 cost by the trend over several runs.
 
 ## 10. Runbook
-1. **First run**: `action=run`, `render_test=true`. Read `results.json` (artifact or `render_runs/`):
+1. **First run of the suite**: `action=run`, `render_test=true`, `suite_tier=smoke` (about the same as run 2), then `standard`, then `full`. Read `report.md` in the run Summary, then `index.html` and `results.json` from the artifact:
    - `model_files` and `wan2gp_fetched_own_weights_mb`: is the pre-downloaded 19B file what the 22B
      `model_type` uses? If Wan2GP fetched its own, drop `download_weights.py` from the chain (about 7 min saved) or align `model_type`.
    - Did the 30 s case produce 30 s? Check `duration_s`, `decode_ok`, `black_s`, `frozen_s`.
@@ -199,7 +206,7 @@ cost by the trend over several runs.
 ### Settings and rendering
 | Question | Answer |
 |---|---|
-| Export settings every install? | No. Export once and commit the JSON to `render_settings/`. They feed headless mode (`wgp.py --process file.json`). |
+| Export settings every install? | No. The settings live in `render_suite/cases.json` in git; `render_test.py` writes the exact settings it ran to `results/<case>/settings.json`. They feed headless mode (`wgp.py --process file.json`). |
 | What is inside? | Keys such as `model_type`, `prompt`, `resolution`, `num_inference_steps`, `video_length` (frames). The three provided files follow Wan2GP's docs examples, not a UI export. |
 | Risk of docs-based settings? | Low. A bad file fails in milliseconds, a wrong model fails fast, the image case runs first. Worst case is a 60 min timeout at about $0.59/hr. |
 | Missing settings file? | SKIPPED, not FAILED: a config gap is not a host fault. With all 3 committed nothing is skipped. |
@@ -295,17 +302,33 @@ Answers drawn from this run:
   denoise step and passed here. `render_test.py` now prints the `PATCH denoiser_triton:` line from `deploy.log` as `env.triton_patch`.
   The patch line itself was not in the logs you sent (the Actions log shows only the last 8 lines per poll), so confirm it in the artifact.
 
-### What the Triton fix is (what, why, how)
-- **What:** LTX-2 inside Wan2GP applies rotary position embeddings (RoPE) with a custom GPU kernel written in Triton.
-  Every attention layer calls it, so a compile error there kills the render at the first step.
-- **Why it failed:** the kernel indexes two `tl.constexpr` values (`GRID`, `AXIS_IDS`) directly. Triton 3.3.1 on this image
-  does not allow that, so it raises `TypeError: 'constexpr' object is not subscriptable`.
-- **How we fixed it:** `bootstrap.sh` rewrites those two indexing sites inside `_split_rope` only, from `AXIS_IDS[a]` to
-  `AXIS_IDS.value[a]` and from `GRID[j]` to `GRID.value[j]`. It is idempotent and keeps a `.orig` backup. A third-party report
-  showed the same change fixing the same error; this run is the first independent confirmation on your image.
+### What the Triton fix is (bird's eye)
+
+```
+ your prompt ─► text encoder ─► denoising loop (8 steps) ──► video
+                                      │
+                      every attention layer applies "RoPE"
+                      (rotary position embedding: tells the model
+                       where / when each pixel-patch is)
+                                      │
+                      Wan2GP does it with a GPU kernel written in Triton
+                                      │
+        kernel code:   AXIS_IDS[a]  ,  GRID[j]      <- indexes two tl.constexpr objects
+                                      │
+        Triton 3.3.1 (on our image):  "constexpr object is not subscriptable"  -> crash at step 1
+                                      │
+        our fix (bootstrap.sh):   AXIS_IDS.value[a] , GRID.value[j]   (that one function only)
+                                      │
+                                      ▼
+                                   renders
+```
+- **What:** a compile error in one small GPU function, hit on the very first denoising step.
+- **Why:** the function indexes a Triton wrapper object directly; this Triton version wants `.value`.
+- **How:** `bootstrap.sh` rewrites those two spots after install (idempotent, `.orig` backup, a `PATCH denoiser_triton:` line in `deploy.log`).
+- **One line:** a version mismatch between Wan2GP's kernel and the Triton in the image, not a model or host problem.
 
 ### PREDOWNLOAD
-Default is set in `bootstrap.sh`: `PREDOWNLOAD="${PREDOWNLOAD:-0}"`, so the pre-download is off. To override, run the workflow
+It is read **on the box, after the instance is rented and SSH works** (inside `bootstrap.sh`), never during offer selection. The runner only forwards the workflow input in the Deploy ssh command. Default is set in `bootstrap.sh`: `PREDOWNLOAD="${PREDOWNLOAD:-0}"`, so the pre-download is off. To override, run the workflow
 with input **predownload = true**; the Deploy step passes `PREDOWNLOAD=1` to the box. (Before this change there was no way to
 override it without editing the script.)
 
@@ -353,6 +376,76 @@ Where our setup differs and what to add, in order of likely payoff. Items marked
 | Delivery | raw encoder output | re-encode to a sane bitrate; optional frame interpolation |
 | Quality gate | decode, black, frozen | add a vision-model or manual review step; prompt adherence is not measured |
 
+## 11f. The test suite: your 10 images + 10 videos
+
+Goal: see what this pipeline produces at its best, how long each thing takes, and what fails, using real briefs.
+Everything is in `render_suite/cases.json`. Sub-clips (`V10a-c`) are internal steps of the stitched `V10`.
+
+### Rules the lint enforces before any GPU is rented
+At most 10 image and 10 video deliverables in `smoke` + `standard`; every deliverable video is 10 to 15 s (frames at 24 fps,
+`8n+1`); every case has a unique ID and a name that starts with it; an image-to-video case points at an earlier image case.
+
+### Tiers (estimates; only the download and the 30 s speed are measured)
+
+| Tier | Cases | What it is | Est. wall time | Est. GPU cost |
+|---|---|---|---|---|
+| `smoke` | 3 | `I10` toddler image, `V10a` 5 s image-to-video, `V04` 10 s text-to-video | about 15 min (mostly the two model downloads) | about $0.3 |
+| `standard` | 23 = 10 images + 12 clips + 1 stitch | your set | about 40 to 55 min | about $0.4 to $0.6 |
+| `full` | 27 | `standard` + 4 optional extras beyond your cap (`I11` Ghibli quote text, `I12` start-up infographic, `I13` second seed, `V11` 1080p) | about 60 to 75 min | about $0.6 to $0.8 |
+
+How the `standard` estimate is made: two cold downloads (Qwen-Image 31 GB + LTX 42 GB) about 10 min; 10 images at about 40 s;
+116 video-seconds at the measured warm 6.2 s per video second about 12 min; re-encodes and stitch about 3 min; setup about 4 min.
+
+### Concept to image to video (the matching table)
+
+| concept | origin | image | video(s) | tier |
+|---|---|---|---|---|
+| C01 Ghibli traveler | mine | **I01** 1664x928 | **V01** i2v 10 s 1280x704<br>**V11** i2v 10 s 1920x1088 | standard |
+| C02 Sneaker product | mine | **I02** 1664x928 | **V02** i2v 10 s 1280x704 | standard |
+| C03 Neon city night | mine | **I03** 1664x928 | **V03** i2v 10 s 1280x704 | standard |
+| C04 Portrait | mine | **I04** 928x1664 | - | standard |
+| C05 Father braids hair | pasted | **I05** 1664x928 | **V05** i2v 12 s 1280x704 | standard |
+| C06 Dogs in a taxi | pasted | **I06** 1664x928 | **V06** i2v 10 s 1280x704 | standard |
+| C07 Baby lawyer in court | pasted | **I07** 1664x928 | **V07** i2v 12 s 1280x704 | standard |
+| C08 AI avatar presenter | pasted | **I08** 928x1664 | **V08** i2v 15 s 704x1280 | standard |
+| C09 Ganesha and mouse army | pasted | **I09** 928x1664 | **V09** i2v 12 s 704x1280 | standard |
+| C10 Toddler and blood story | pasted | **I10** 928x1664 | ***V10a** i2v 5 s 704x1280*<br>***V10b** i2v 5 s 704x1280*<br>***V10c** i2v 5 s 704x1280*<br>**V10** stitch of V10a, V10b, V10c = 15 s | standard |
+| C11 Waterfall | mine | - | **V04** t2v 10 s 1280x704 | standard |
+| X1 Ghibli quote poster | pasted | **I11** 928x1664 | - | full (extra) |
+| X2 Infographic | pasted | **I12** 1664x928 | - | full (extra) |
+
+Only in `full` (beyond your cap): `I11`, `I12`, `I13` (second seed of `I05`) and `V11` (the 1080p version of `V01`).
+
+`*italic*` clips are internal sub-clips. Resolutions follow the pasted prompts: `--ar 16:9` becomes 1664x928 (images) and 1280x704
+(videos); `--ar 9:16` becomes 928x1664 and 704x1280. Midjourney flags (`--v 6.0`) are dropped; Qwen-Image does not use them.
+
+### How a prompt is matched to its output
+- Every case has an ID (`I05`, `V05`) and every file is named `<ID>_<slug>.<ext>`.
+- `<case>/<ID>_<slug>.txt` holds the full prompt, settings, mode and (for image-to-video) the source image ID.
+- `delivery.mp4` has the case name burned into its top-left corner (when the box's ffmpeg has `drawtext`; otherwise it is skipped silently).
+- `id_map.md`: one row per concept, image to video. `index.html`: grouped by concept, prompt inside each card.
+- `results.json` has `id`, `concept`, `mode`, `from_case`, `origin` per case.
+
+### The two special examples
+- **AI digital avatar (`I08` then `V08`)**: a fictional presenter is generated first (`I08`, 9:16), then `V08` is image-to-video with 15 s of
+  spoken script, lip sync and gestures. The script is a neutral "try open models" tip (the pasted reel's product claims were not repeated).
+  What you check by ear: clarity, lip sync, language. `silent_s` flags dead audio but cannot judge speech.
+- **Stitched 15 s from three 5 s clips (`V10`)**: `V10a` (the pasted toddler yawn prompt), `V10b` (red blood cells) and `V10c` (white
+  blood cells and platelets) all start from the SAME image `I10`, then ffmpeg joins them with hard cuts (re-encoded, CRF 17). The
+  result records the seams (5 s, 10 s) and a strip of the frame before and after each cut.
+  Whether image-to-video can go "inside the body" from a bedroom still is exactly what this case tests; it may well not.
+
+### What to look at after a run
+1. Run Summary: `report.md` (ID, mode, source, time, $, VRAM, output, quality flags).
+2. Artifact: `index.html` by concept; `id_map.md`; `results.json`.
+3. By eye and ear (nothing automatic judges these): `I03` sign spelling, `I04` skin and hands, `V07` and `V08` speech and lip sync,
+   `V05` hands and hair, `V06` props staying on the dogs, `V09` crowd consistency, `V10` seams, and image-to-video vs text-to-video (`V04`).
+4. Numbers for real jobs: warm `render_s_per_video_s`, `peak_vram_mb`, cold download MB per model, `delivery_mbps` vs original.
+
+### Changing the suite
+Edit `cases.json` (`id`, `name` = id + slug, `kind` image / video / stitch, `tier`, `settings`, optional `needs`, `parts`, `model_candidates`,
+`timeout_s`, `internal`). The lint runs first and rejects anything outside your 10 + 10 and 10 to 15 s rules.
+
 ## 12. UNVERIFIED (do not rely on these until the first real run confirms them)
 
 | # | Claim | Confidence | How it gets verified |
@@ -379,7 +472,20 @@ Where our setup differs and what to add, in order of likely payoff. Items marked
 | 20 | Case timeouts of 1500 / 1500 / 3000 s cover the first-use downloads on slow hosts | medium (run 2 used 291 / 416 / 186 s at about 1 Gbps; a 400 Mbps host would take roughly 2.5x on the download part) | `elapsed_s` vs timeout |
 | 21 | The 30 s clip is visually continuous across its two sliding windows | unknown | watch the seam near 20 s; `frozen_s`, `black_s` do not measure continuity |
 | 22 | Seedance 2.0 capabilities (a third-party wiki, not the technical report) | low | primary source: seed.bytedance.com |
-| 23 | General-practice items in 11e (structured prompts, seeds, CRF re-encode) improve quality here | medium, untested on this stack | one comparison run each |
+| 23 | General-practice items in 11e (structured prompts, seeds, CRF re-encode) improve quality here | medium, untested on this stack | `standard` tier comparisons (section 11f) |
+| 24 | Settings keys `seed`, `image_start`, `image_prompt_type: "S"` are honored by `--process` JSON files | medium (docs name `image_start` + `S`; `seed` is inferred from the output file names) | `seed_honored`; `vid_05` result |
+| 25 | Wan2GP accepts `1664x928` (Qwen), `2048x1152` (Qwen) and `1920x1088` (LTX) | low | the corresponding cases; an OOM or error there is a finding |
+| 26 | Model names `z_image*`, `ltx2_22B*` (DEV), `t2v_2_2*` exist in `defaults/` | low | `env.model_catalog`; those cases are SKIPPED otherwise |
+| 27 | A newline-separated prompt maps to one prompt per sliding window (`vid_16`) | low | the result; the case is exploratory |
+| 28 | Time and cost estimates for `standard` and `full` | low (only smoke is calibrated) | `suite_elapsed_s`, `cost_usd` |
+| 29 | `libx264` and `aac` exist in the box's ffmpeg for the delivery re-encode | medium | `output.delivery` field; `DELIVERY=0` skips it |
+| 30 | Run-1 and run-2 weights (LTX 42 GB, Qwen 31 GB) are all that `smoke` and `standard` download | medium | `wan2gp_fetched_own_weights_mb` |
+| 31 | `928x1664` / `1664x928` (Qwen) and `704x1280` (LTX) are accepted | medium (standard aspect-ratio sizes, multiples of 32) | the cases; an error names the problem |
+| 32 | Image-to-video from `I10` can show the inside of a blood vessel (`V10b`, `V10c`) | low | the clips; likely partial at best |
+| 33 | LTX speaks the quoted English lines (`V07`, `V08`, `V10b-c`) with usable lip sync | low-medium | listen |
+| 34 | A 704x1280 vertical 15 s clip stays within VRAM and time (`V08`) | medium | `peak_vram_mb`, `elapsed_s` |
+| 35 | The case-name label burns into `delivery.mp4` | medium (needs `drawtext`/freetype in the box's ffmpeg; skipped silently otherwise) | `delivery_labelled` |
+| 36 | Hard cuts in `V10` look acceptable; `.concat` re-encode keeps audio in sync | medium | the seam strip; listen at 5 s and 10 s |
 
 ## 13. Files to add or edit (one checklist)
 
@@ -391,12 +497,13 @@ Copy these into the repo, commit to the branch you dispatch the workflow from.
 | `ltx2-video-gpu/scripts/pick_offers.py` | **EDIT (replace)** | adds proven-host ranking and the proven count in the summary |
 | `README.md` | **EDIT (replace)** | one-line pointer to this file |
 | `ltx2-video-gpu/ltx2-video-gpu-readme.md` | **ADD** | this file |
-| `ltx2-video-gpu/scripts/render_test.py` | **ADD / replace** | root-cause extraction, package versions, Triton patch status, warm-only ratio, bitrate and `final_output`, timeouts 1500/1500/3000 |
+| `ltx2-video-gpu/scripts/render_test.py` | **ADD / replace** | the suite runner (tiers, thumbnails, delivery re-encode, reports, failure policy) |
+| `ltx2-video-gpu/scripts/run_remote_suite.sh` | **ADD** | starts the suite detached on the box and streams its output |
+| `ltx2-video-gpu/scripts/lint_suite.py` | **ADD / replace** | enforces 10 + 10, 10 to 15 s, IDs, stitch parts before renting |
 | `ltx2-video-gpu/scripts/log_attempt.py` | **ADD / replace** | writes `attempts.csv` + `runs.csv`; heals duplicated files; stores the render root cause in `fail_note` |
 | `ltx2-video-gpu/scripts/bootstrap.sh` | **EDIT (replace)** | pre-download off by default; idempotent Triton workaround |
-| `ltx2-video-gpu/render_settings/image.json` | **ADD** | settings, still image |
-| `ltx2-video-gpu/render_settings/video_short.json` | **ADD** | settings, short clip |
-| `ltx2-video-gpu/render_settings/video_30s.json` | **ADD** | settings, 30 s clip |
+| `ltx2-video-gpu/render_suite/cases.json` | **ADD / replace** | 10 images + 10 videos with IDs, avatar, stitched example, 4 optional extras |
+| `ltx2-video-gpu/render_settings/` | **DELETE** | replaced by `render_suite/`; the old 3 JSON files are cases `img_01`, `vid_01`, `vid_02` now |
 
 Do **not** overwrite your live `ltx2-video-gpu/attempts.csv` with the copy in the download: it is an
 unchanged snapshot of the zip, and the workflow migrates your real file in place on the next run.
@@ -405,13 +512,14 @@ Unchanged, leave alone: `scripts/download_weights.py` (kept for `PREDOWNLOAD=1`)
 `scripts/probe_bandwidth.sh`, `scripts/start.sh`.
 
 **Workflow caution:** your repo's workflow and `probe_bandwidth.sh` already differ from the ones I delivered (the logs show
-`SAMPLES=` and a 600 Mbps bar), so do not blindly replace them. Apply these 3 changes to your copy, or diff against
+`SAMPLES=` and a 600 Mbps bar), so do not blindly replace them. Apply these changes to your copy, or diff against
 the delivered `ltx2-gpu.yml`:
 1. Step "Credit after + spend": `source /tmp/run_stats.env` becomes `set -a; source /tmp/run_stats.env; set +a`.
-2. New step before "Credit before": "Lint render settings (free)", copied from the delivered file.
-3. Timeouts: render step `timeout-minutes: 110`, job `timeout-minutes: 200`.
+2. New step before "Credit before": "Lint render suite (free)" (runs `scripts/lint_suite.py`), copied from the delivered file.
+3. Timeouts: render step `timeout-minutes: 170`, job `timeout-minutes: 260`; artifact `retention-days: 14`.
 4. Hold step: restart the app (`ssh ... 'cd ~ && nohup bash start.sh ...'`) when `render_test` is true, then wait for HTTP 200.
-5. New input `predownload` and `export ... PREDOWNLOAD=$PREDL` in the Deploy ssh command.
+5. New inputs `predownload` (+ `export ... PREDOWNLOAD=$PREDL` in the Deploy ssh command) and `suite_tier`; `weights_gb` default 73.
+6. The render step is replaced: it copies `render_test.py` + `render_suite/`, calls `scripts/run_remote_suite.sh`, pulls `results/`, appends `report.md` to the run Summary.
 
 Created automatically by the workflow (do not add by hand): `ltx2-video-gpu/runs.csv`,
 `ltx2-video-gpu/render_runs/*.json`, and the new `attempts.csv` columns.
