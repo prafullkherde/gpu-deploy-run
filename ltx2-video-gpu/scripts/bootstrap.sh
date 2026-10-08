@@ -89,6 +89,45 @@ command -v ffmpeg > /dev/null || { echo "FAIL: ffmpeg not found in this image.";
 
 echo ""
 echo "=================================================="
+echo "STEP 3a — Optional: update Wan2GP to the latest release (WANGP_UPDATE=1)"
+echo "=================================================="
+# Why: the pinned image carries an older Wan2GP (menus show "LTX-2.3 Distilled 1.0" and "Qwen Image 20B"). Upstream
+# (v13.141, Sep 2026) lists LTX-2.5, Qwen Image 2.1, Krea 2 and Distilled 1.1. Off by default; a failed update rolls back.
+WANGP_UPDATE="${WANGP_UPDATE:-0}"
+WANGP_REPO="${WANGP_REPO:-https://github.com/deepbeepmeep/Wan2GP.git}"
+if [ "$WANGP_UPDATE" = "1" ]; then
+  cd "$WAN2GP_DIR"
+  BEFORE=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
+  BACKUP=/tmp/wan2gp_backup.tgz
+  tar -czf "$BACKUP" --exclude=./ckpts --exclude=./outputs --exclude=./loras --exclude=./venv --exclude=./.git . 2>/dev/null || true
+  UPDATE_OK=0
+  if [ -d .git ]; then
+    git fetch --depth 1 "$WANGP_REPO" main 2>&1 | tail -2 && git reset --hard FETCH_HEAD 2>&1 | tail -1 && UPDATE_OK=1
+  else
+    TMPD=$(mktemp -d); git clone --depth 1 "$WANGP_REPO" "$TMPD/w" 2>&1 | tail -1 \
+      && (cd "$TMPD/w" && tar -cf - --exclude=.git .) | tar -xf - -C "$WAN2GP_DIR" && UPDATE_OK=1
+  fi
+  AFTER=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
+  if [ "$UPDATE_OK" = "1" ]; then
+    "$PYTHON_BIN" -m pip install -q -r requirements.txt 2>&1 | tail -3 || true
+    # proof the update still starts: argparse runs before any model loads
+    if timeout 240 "$PYTHON_BIN" wgp.py --help > /tmp/wgp_help.out 2>&1; then
+      echo "UPDATE: wan2gp $BEFORE -> $AFTER, startup check OK"
+    else
+      echo "UPDATE: startup check FAILED ($(tail -1 /tmp/wgp_help.out | cut -c1-120)); rolling back"
+      if [ -d .git ] && [ "$BEFORE" != "nogit" ]; then git reset --hard "$BEFORE" 2>&1 | tail -1; fi
+      tar -xzf "$BACKUP" -C "$WAN2GP_DIR" 2>/dev/null || true
+      echo "UPDATE: rolled back to $BEFORE"
+    fi
+  else
+    echo "UPDATE: could not fetch $WANGP_REPO (continuing with the pinned version)"
+  fi
+else
+  echo "SKIPPED (WANGP_UPDATE=0): running the Wan2GP that ships in the image."
+fi
+
+echo ""
+echo "=================================================="
 echo "STEP 3b — Known Wan2GP / Triton compatibility patch (LTX-2 RoPE kernel)"
 echo "=================================================="
 # Run 37297908189: every LTX-2.3 render died in models/ltx2/denoiser_triton.py::_split_rope with

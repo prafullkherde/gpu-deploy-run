@@ -2,7 +2,7 @@
 """
 render_test.py -- runs ON the rented box after the health check returns HTTP 200.
 
-Reads render_suite/cases.json, runs every case of the chosen TIER (smoke < standard < full) one at a time with
+Reads render_suite/cases.json, runs every case of the chosen TIER (smoke < standard < lab) one at a time with
 `wgp.py --process <settings.json> --output-dir <dir>`, and writes into ~/results/:
   results.json   everything, machine-readable (timings, GPU, files, quality flags, failure root cause)
   report.md      the same as tables, for the Actions run summary
@@ -27,12 +27,12 @@ import time
 from pathlib import Path
 
 HOME = Path.home()
-TIER_ORDER = {"smoke": 0, "standard": 1, "full": 2}
+TIER_ORDER = {"smoke": 0, "standard": 1, "lab": 2}
 TIER = os.environ.get("TIER", "smoke")
 SUITE_DIR = Path(os.environ.get("SUITE_DIR", HOME / "render_suite"))
 OUT_DIR = Path(os.environ.get("OUT_DIR", HOME / "results"))
 DPH = float(os.environ.get("DPH") or 0)
-BUDGET_MIN = float(os.environ.get("SUITE_BUDGET_MIN") or {"smoke": 40, "standard": 90, "full": 150}.get(TIER, 90))
+BUDGET_MIN = float(os.environ.get("SUITE_BUDGET_MIN") or {"smoke": 40, "standard": 120, "lab": 220}.get(TIER, 120))
 COLD_BONUS_S = int(os.environ.get("COLD_BONUS_S") or 1500)  # extra timeout for the first case of each model (its download)
 KEEP_PARTIALS = os.environ.get("KEEP_PARTIALS") == "1"
 DELIVERY = os.environ.get("DELIVERY", "1") != "0"
@@ -236,6 +236,52 @@ def make_seam_strip(media, seams, thumbs_dir, name):
     return f"thumbs/{dst.name}" if dst.exists() else None
 
 
+def frame_stats(path):
+    """Brightness / contrast / sharpness proxies of ONE image via ffmpeg (stdlib only on the box).
+    luma = mean brightness 0-255; low/high = 10th/90th percentile (YLOW/YHIGH); edges = mean Sobel magnitude (higher = more fine detail)."""
+    out = {}
+    for key, vf in (("luma", "signalstats,metadata=print:file=-"), ("edges", "format=gray,sobel,signalstats,metadata=print:file=-")):
+        try:
+            p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vf", vf, "-frames:v", "1", "-f", "null", "-"],
+                               capture_output=True, text=True, timeout=120)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return {}
+        out[key] = {k: float(v) for k, v in re.findall(r"lavfi\.signalstats\.(\w+)=([\d.]+)", p.stdout + p.stderr)}
+    L, E = out.get("luma", {}), out.get("edges", {})
+    if "YAVG" not in L or "YAVG" not in E:
+        return {}
+    return {"luma": round(L["YAVG"]), "low": round(L["YLOW"]), "high": round(L["YHIGH"]), "sat": round(L.get("SATAVG", 0)),
+            "edges": round(E["YAVG"], 1)}
+
+
+def quality_metrics(path, kind, duration):
+    """Image: one measurement. Video: three frames (20/50/80 %) averaged. Flags are heuristics, not verdicts."""
+    if kind == "image":
+        m = frame_stats(path)
+    else:
+        tmp = OUT_DIR / "thumbs"
+        tmp.mkdir(parents=True, exist_ok=True)
+        rows = []
+        for i, frac in enumerate((0.2, 0.5, 0.8)):
+            f = tmp / f"_m{i}.jpg"
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{duration * frac:.2f}", "-i", str(path), "-frames:v", "1", str(f)],
+                           capture_output=True, timeout=120)
+            if f.exists():
+                rows.append(frame_stats(f))
+                f.unlink()
+        rows = [r for r in rows if r]
+        m = {k: round(sum(r[k] for r in rows) / len(rows), 1) for k in rows[0]} if rows else {}
+    if not m:
+        return {}
+    flags = []
+    if m["luma"] < 70:
+        flags.append("DARK")
+    if m["high"] - m["low"] < 60:
+        flags.append("LOW_CONTRAST")
+    m["flags"] = flags
+    return m
+
+
 # ---------------------------------------------------------------- app control, diagnostics
 def app_running():
     return subprocess.run(["pgrep", "-f", APP_PATTERN], capture_output=True).returncode == 0
@@ -270,13 +316,50 @@ def failure_summary(log_text):
 
 
 def model_catalog():
-    """model_type values are the stems of the JSON files in Wan2GP's defaults/ (and finetunes/) directories."""
-    stems = set()
+    """stem -> display name, from Wan2GP's defaults/ and finetunes/ JSON files. The stem is the model_type."""
+    cat = {}
     for sub in ("defaults", "finetunes"):
         d = WAN2GP_DIR / sub
-        if d.is_dir():
-            stems.update(p.stem for p in d.glob("*.json"))
-    return sorted(stems)
+        if not d.is_dir():
+            continue
+        for p in d.glob("*.json"):
+            try:
+                name = (json.loads(p.read_text()).get("model") or {}).get("name", "")
+            except (json.JSONDecodeError, OSError, AttributeError):
+                name = ""
+            cat[p.stem] = name
+    return dict(sorted(cat.items()))
+
+
+def model_defaults(stems):
+    """What Wan2GP itself recommends for each model (steps, guidance, loras ...): everything outside the 'model' block."""
+    out = {}
+    for stem in stems:
+        for sub in ("defaults", "finetunes"):
+            f = WAN2GP_DIR / sub / f"{stem}.json"
+            if f.exists():
+                try:
+                    d = json.loads(f.read_text())
+                except json.JSONDecodeError:
+                    continue
+                m = d.get("model") or {}
+                out[stem] = {"name": m.get("name"), "architecture": m.get("architecture"),
+                             "settings": {k: (v[:80] if isinstance(v, str) else v) for k, v in d.items() if k != "model"}}
+                break
+    return out
+
+
+def wgp_config_subset():
+    """The keys of wgp_config.json that decide memory profile, quantization, attention and output formats."""
+    f = WAN2GP_DIR / "wgp_config.json"
+    if not f.exists():
+        return {"wgp_config.json": "missing"}
+    try:
+        cfg = json.loads(f.read_text())
+    except json.JSONDecodeError:
+        return {"wgp_config.json": "invalid json"}
+    pat = re.compile(r"profile|quant|attention|codec|output|compile|vae|preload|enhanc|fps|quality|upsampl|sage|tea|mag", re.I)
+    return {k: v for k, v in cfg.items() if pat.search(k) and not isinstance(v, (dict, list))}
 
 
 def model_file_report(model_types):
@@ -314,14 +397,21 @@ def heartbeat(name, start, log_path, sampler, stop_evt):
 
 # ---------------------------------------------------------------- one case
 def resolve_model(case, catalog):
+    """model_type to use. Order: explicit settings.model_type; then the first regex in model_match that matches a catalog
+    entry's 'stem name' text (so a case can say 'LTX-2.5 distilled' without knowing the stem); then model_candidates."""
     s = case["settings"]
     if s.get("model_type"):
-        return s["model_type"]
+        return s["model_type"], catalog.get(s["model_type"], "")
+    for pat in case.get("model_match") or []:
+        rx = re.compile(pat, re.I)
+        hits = [(stem, name) for stem, name in catalog.items() if rx.search(f"{stem} {name}")]
+        if hits:
+            return hits[0]
     cands = case.get("model_candidates") or []
     present = [c for c in cands if c in catalog]
     if present:
-        return present[0]
-    return cands[0] if cands and not catalog else None  # empty catalog (unreadable defaults/): try the first guess
+        return present[0], catalog.get(present[0], "")
+    return (cands[0], "") if cands and not catalog else (None, "")
 
 
 def final_media(media, kind):
@@ -336,7 +426,8 @@ def final_media(media, kind):
 def identity(case):
     """Fields that make every result traceable: ID, concept, mode, and which image a video was made from."""
     return {"id": case.get("id"), "concept": case.get("concept"), "mode": case.get("mode"), "origin": case.get("origin"),
-            "internal": bool(case.get("internal")), "from_case": case.get("needs"), "note": case.get("note")}
+            "internal": bool(case.get("internal")), "from_case": case.get("needs"), "note": case.get("note"),
+            "sweep": case.get("sweep")}
 
 
 def finalize_output(case, rec, out_dir, final, settings):
@@ -428,10 +519,10 @@ def run_case(case, model_type, settings, timeout_s):
     sampler.start()
     start = time.time()
     status, rc = "FAILED", None
-    cmd = [PYTHON_BIN, "-u", "wgp.py", "--process", str(settings_path), "--output-dir", str(out)]
+    cmd = [PYTHON_BIN, "-u", "wgp.py", *case.get("cli_args", []), "--process", str(settings_path), "--output-dir", str(out)]
     if GROUPS:
         print(f"::group::[{name}] {case.get('group', '')}", flush=True)
-    print(f"[{name}] START model={model_type} timeout={timeout_s}s res={settings.get('resolution')} "
+    print(f"[{name}] START model={model_type} ({case.get('_model_name', '')}) timeout={timeout_s}s res={settings.get('resolution')} "
           f"frames={settings.get('video_length', '-')} steps={settings.get('num_inference_steps', 'default')}", flush=True)
     hb_stop = threading.Event()
     log_path.write_text("")
@@ -454,7 +545,7 @@ def run_case(case, model_type, settings, timeout_s):
     if status != "TIMEOUT":
         status = "SUCCESS" if rc == 0 and final else "FAILED"
     rec = {
-        "name": name, "group": case.get("group"), "kind": kind, "model_type": model_type, "tier": case["tier"],
+        "name": name, "group": case.get("group"), "kind": kind, "model_type": model_type, "model_name": case.get("_model_name"), "tier": case["tier"],
         **identity(case), "status": status, "exit_code": rc, "elapsed_s": elapsed,
         "cost_usd": round(elapsed * DPH / 3600, 4) if DPH else None,
         "settings": {k: (v if k != "prompt" else v[:200]) for k, v in settings.items()},
@@ -481,13 +572,16 @@ def run_case(case, model_type, settings, timeout_s):
             if DELIVERY:
                 rec["output"].update(make_delivery(out / final["file"], case_dir / "delivery.mp4", label=case["name"][:40]))
         rec["thumb"] = make_thumb(out / final["file"], kind, OUT_DIR / "thumbs", name)
+        rec["metrics"] = quality_metrics(out / final["file"], kind, final.get("duration_s") or 0)
         if status == "SUCCESS" and kind == "video" and rec["warm"] and final["duration_s"] > 1:
             rec["render_s_per_video_s"] = round(elapsed / final["duration_s"], 2)
     if status != "SUCCESS":
         text = log_path.read_text(errors="replace")
         rec["failure"] = failure_summary(text)
         rec["log_tail"] = text[-600:]
-    hits = [ln.strip()[:160] for ln in log_path.read_text(errors="replace").splitlines()
+    log_text = log_path.read_text(errors="replace")
+    rec["phases_seen"] = int("First Phase" in log_text) + int("Second Phase" in log_text) if "Denoising" in log_text else 0
+    hits = [ln.strip()[:160] for ln in log_text.splitlines()
             if re.search(r"\b(401|403)\b|gated|Access to model|Repository Not Found", ln)]
     if hits:
         rec["hf_access_errors"] = hits[:5]
@@ -530,7 +624,8 @@ def write_reports(env_snap, suite_elapsed):
         return (f"{o.get('width')}x{o.get('height')}{' ' + str(o.get('duration_s')) + 's' if r.get('kind') in ('video', 'stitch') else ''} "
                 f"{round((o.get('size_bytes') or 0) / 1e6, 1)}MB")
 
-    rows = ["| ID | case | mode | from | status | time | $ | VRAM MB | output | quality | notes |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| ID | case | mode | from | status | time | $ | VRAM MB | output | brightness / contrast / detail | quality | notes |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         o = r.get("output") or {}
         q = " ".join(filter(None, [
@@ -545,9 +640,24 @@ def write_reports(env_snap, suite_elapsed):
             None if r.get("seed_honored", True) else "SEED NOT HONORED",
             ("%s: %s" % (r["failure"]["kind"], r["failure"]["exception"][:70])) if r.get("failure") else None,
             ("delivery %.1f MB" % o["delivery_mb"]) if o.get("delivery_mb") else None]))
+        mt = r.get("metrics") or {}
+        mtxt = (f"luma {mt['luma']} · spread {mt['high'] - mt['low']} · edges {mt['edges']}" + (" " + ",".join(mt["flags"]) if mt.get("flags") else "")) if mt else ""
         rows.append(f"| {r.get('id') or ''} | {r['name']} | {r.get('mode') or ''} | {(r.get('from_case') or '').split('_')[0]} | {r['status']} | "
-                    f"{r.get('elapsed_s', '')} | {r.get('cost_usd') or ''} | {r.get('peak_vram_mb') or ''} | {out_text(r)} | {q} | {notes} |")
-    (OUT_DIR / "report.md").write_text("\n".join(head + rows) + "\n")
+                    f"{r.get('elapsed_s', '')} | {r.get('cost_usd') or ''} | {r.get('peak_vram_mb') or ''} | {out_text(r)} | {mtxt} | {q} | {notes} |")
+    sweeps = {}
+    for r in results:
+        if r.get("sweep") and r["status"] == "SUCCESS":
+            sweeps.setdefault(r["sweep"], []).append(r)
+    sweep_md = []
+    for sw, rs in sweeps.items():
+        sweep_md += ["", f"#### Sweep: {sw} (same prompt and seed; only the config differs; look at them side by side)", "",
+                     "| case | model | steps / guidance | time s | luma | edges (detail) | flags |", "|---|---|---|---|---|---|---|"]
+        for r in sorted(rs, key=lambda x: -((x.get("metrics") or {}).get("edges") or 0)):
+            st, mt = r.get("settings") or {}, r.get("metrics") or {}
+            sweep_md.append(f"| {r['name']} | {r.get('model_name') or r.get('model_type')} | {st.get('num_inference_steps', 'default')} / "
+                            f"{st.get('guidance_scale', 'default')} | {r.get('elapsed_s')} | {mt.get('luma', '')} | {mt.get('edges', '')} | "
+                            f"{','.join(mt.get('flags', []))} |")
+    (OUT_DIR / "report.md").write_text("\n".join(head + rows + sweep_md) + "\n")
 
     # id_map.md: one line per concept, image -> video, the matching you asked for
     by_concept = {}
@@ -602,10 +712,14 @@ def main():
         "triton_patch": sh("grep -h 'PATCH denoiser_triton' ~/deploy.log | tail -1") or "no PATCH line in deploy.log",
         "packages": sh(f"{PYTHON_BIN} -c \"import importlib.metadata as m; print({{n: m.version(n) for n in ('torch','triton','sageattention','flash_attn','mmgp','gradio') "
                        "if any(d.metadata['Name'].lower().replace('-','_')==n for d in m.distributions())})\" 2>&1 | tail -1"),
-        "model_catalog": catalog,
+        "model_catalog": {k: v for k, v in catalog.items()},
+        "wgp_config": wgp_config_subset(),
     }
     print(json.dumps({k: v for k, v in env_snap.items() if k != "model_catalog"}, indent=2), flush=True)
     print(f"model_type catalog on this box: {len(catalog)} entries", flush=True)
+    # The names Wan2GP shows in its menu, one line per image/video model: lets the next run pick exact model_types.
+    interesting = re.compile(r"qwen|krea|z.?image|flux|ltx|wan|hunyuan|h3|minimax|hidream|ideogram|sensenova", re.I)
+    print("MODELS: " + " | ".join(f"{k}={v}" for k, v in catalog.items() if interesting.search(f"{k} {v}"))[:6000], flush=True)
 
     print(f"app stopped, VRAM used now: {stop_app()} MB", flush=True)
     suite_start = time.time()
@@ -619,10 +733,12 @@ def main():
             if dst:
                 finals[case["name"]] = dst
             continue
-        mt = resolve_model(case, catalog)
+        mt, mname = resolve_model(case, catalog)
         if not mt:
-            skipped(case, f"none of {case.get('model_candidates')} exists in defaults/ on this box (see env.model_catalog)")
+            skipped(case, f"no model matched {case.get('model_match') or case.get('model_candidates')} on this box (see env.model_catalog; "
+                          f"a newer Wan2GP may be needed: wan2gp_update=true)")
             continue
+        case["_model_name"] = mname
         if mt in dead_models:
             skipped(case, f"model {mt} already failed with {dead_models[mt]}")
             continue
@@ -646,7 +762,9 @@ def main():
     own_mb = sum(r.get("ckpts_downloaded_mb", 0) for r in results)
     env_snap["wan2gp_fetched_own_weights_mb"] = own_mb
     env_snap["ckpts_after"] = sh(f"du -sh {WAN2GP_DIR}/ckpts/* 2>/dev/null | head -30")
-    env_snap["model_files"] = model_file_report(sorted({r["model_type"] for r in results if r.get("model_type")}))
+    used = sorted({r["model_type"] for r in results if r.get("model_type")})
+    env_snap["model_files"] = model_file_report(used)
+    env_snap["model_defaults"] = model_defaults(used)
     env_snap["suite_elapsed_s"] = round(suite_elapsed)
     env_snap["results_dir_mb"] = round(tree_bytes(OUT_DIR) / 1e6)
     head = write_reports(env_snap, suite_elapsed)
