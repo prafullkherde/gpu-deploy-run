@@ -94,7 +94,7 @@ env:
   RUNS_FILE: ltx2-video-gpu/runs.csv
   NEW_ATTEMPTS: /tmp/attempts_new.csv
   IID_FILE: /tmp/ltx2_iids
-  DISK_GB: "120"
+  DISK_GB: "250"   # lab tier only; standard fits in 120
   TOP_N: "5"
   BOOT_S: "120"
   APP_S: "90"
@@ -458,6 +458,14 @@ jobs:
           SSH="ssh $SSH_OPTS -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
           echo "Disk after the test (did Wan2GP fetch extra checkpoints?):"
           $SSH "du -sh /data /opt/workspace-internal/Wan2GP/ckpts 2>/dev/null; df -h / | tail -1" < /dev/null | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Pull results from the box (also after cancel or failure)
+        if: ${{ always() && github.event.inputs.action == 'run' && github.event.inputs.render_test == 'true' && steps.rent.outputs.host != '' }}
+        continue-on-error: true
+        run: |
+          mkdir -p results
+          timeout 900 scp -r $SSH_OPTS -o ConnectTimeout=10 -i ~/.ssh/deploy_key -P "${{ steps.rent.outputs.port }}" \
+            root@"${{ steps.rent.outputs.host }}":~/results/. results/ < /dev/null || echo "::warning::could not pull results"
 
       - name: Pull logs from the box before it is destroyed
         if: ${{ always() && github.event.inputs.action == 'run' && steps.rent.outputs.host != '' }}
