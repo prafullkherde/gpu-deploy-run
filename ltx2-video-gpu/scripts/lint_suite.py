@@ -2,7 +2,7 @@
 """Free check of render_suite/cases.json, run on the GitHub runner BEFORE any GPU is rented.
 
 Besides syntax it enforces the suite rules you set:
-  * at most 10 image and 10 video DELIVERABLES in the smoke+standard tiers (sub-clips marked "internal" do not count)
+  * at most 5 image and 5 video DELIVERABLES in the smoke+standard tiers (sub-clips marked "internal" do not count); the lab tier is uncapped
   * every deliverable video is 10 to 15 s (frames at 24 fps; a stitch = sum of its parts)
   * every case has a unique id and a name that starts with it; image-to-video points at an EARLIER, same-or-lower-tier image case
 """
@@ -11,8 +11,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-TIERS = {"smoke": 0, "standard": 1, "full": 2}
-FPS, MIN_S, MAX_S, MAX_IMAGES, MAX_VIDEOS = 24, 10.0, 15.0, 10, 10
+TIERS = {"smoke": 0, "standard": 1, "lab": 2}
+FPS, MIN_S, MAX_S, MAX_IMAGES, MAX_VIDEOS = 24, 10.0, 15.0, 5, 5
 path = Path(sys.argv[1] if len(sys.argv) > 1 else "ltx2-video-gpu/render_suite/cases.json")
 errors = []
 
@@ -50,8 +50,8 @@ for i, c in enumerate(cases):
     if kind in ("image", "video"):
         if not s.get("prompt"):
             err(f"{n}: settings.prompt is empty")
-        if not (s.get("model_type") or c.get("model_candidates")):
-            err(f"{n}: needs settings.model_type or model_candidates")
+        if not (s.get("model_type") or c.get("model_candidates") or c.get("model_match")):
+            err(f"{n}: needs settings.model_type, model_candidates or model_match")
         res = s.get("resolution", "")
         if res and (res.count("x") != 1 or not all(p.isdigit() for p in res.split("x"))):
             err(f"{n}: resolution '{res}' is not WIDTHxHEIGHT")
@@ -65,6 +65,11 @@ for i, c in enumerate(cases):
             seconds[n] = (fl - 1) / FPS
             if (fl - 1) % 8:
                 err(f"{n}: video_length {fl} is not 8n+1 (LTX frame rule)")
+    for rx in c.get("model_match", []) or []:
+        try:
+            __import__("re").compile(rx)
+        except Exception as e:  # noqa: BLE001
+            err(f"{n}: model_match regex '{rx}' does not compile: {e}")
     dep = c.get("needs")
     if dep:
         d = by_name.get(dep)

@@ -1,5 +1,5 @@
 {
- "_readme": "Cases for render_test.py. Ids: I = image, V = video (V10a-c are the 3 clips behind stitched V10). tier: smoke < standard < full. 'standard' is the requested set: 10 images + 10 videos, each video 10-15 s. 'full' adds 4 optional extras. needs = another case whose final output becomes image_start (image-to-video). kind 'stitch' joins 'parts' with ffmpeg. internal = a sub-clip, not a deliverable.",
+ "_readme": "Cases for render_test.py. Tiers: smoke < standard < lab. 'standard' = 5 images + 5 videos (V10 = 3 clips stitched), the requested set. 'lab' adds sweeps that isolate the quality cause: same prompt and seed, one change each (see 'sweep'). needs = another case whose output becomes image_start. model_match = regexes tried against 'stem name' of the box's models.",
  "cases": [
   {
    "id": "I01",
@@ -9,68 +9,16 @@
    "mode": "t2i",
    "tier": "standard",
    "origin": "mine",
-   "timeout_s": 600,
-   "note": "MY EXAMPLE (kept). Structured Ghibli scene. Keyframe for V01.",
+   "timeout_s": 900,
+   "note": "Stylised, wide landscape. Keyframe for V01. Prompt rewritten: bright front light instead of golden-hour backlight.",
    "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Studio Ghibli-style painterly illustration, warm semi-realistic anime fantasy art. Subject: a lone young man seen from behind in a three-quarter angle, messy brown hair, a sword strapped to his back, wearing a worn turquoise tunic with a brown belt and a travel cloak lifted slightly by the wind, standing on top of an old crumbling mossy stone wall. Setting: a vast green valley opens in front of him. On the left, far in the distance, a small stone castle sits on a hill. On the right and further below the wall, a modest village of thatched roofs with thin smoke rising. Straight ahead at eye level, a massive snow-capped mountain range meets a dramatic sky of soft cumulus clouds, a winding dirt road curling through the rolling hills. Composition: natural wide-angle view with strong depth: foreground wall stones, midground valley, distant mountains. Lighting: golden-hour sun low behind the peaks, warm rim light on the cloak, long soft shadows. Palette: muted greens, earthy browns and golds, a glowing sky in soft orange and pale blue. Style: hand-painted gouache texture, visible brushwork, cinematic depth, classic anime movie aesthetic, no photorealism. No text, no watermark.",
+    "prompt": "Studio Ghibli-style hand-painted anime illustration, clean crisp line art and richly detailed painted backgrounds. Subject: a lone young man seen from behind in a three-quarter angle, messy brown hair, a sword sheathed on his back, a turquoise tunic with a brown belt, standing on top of an old mossy stone wall, fully and evenly lit. Setting: a wide green valley opens in front of him; on the left, far away, a small stone castle on a hill; on the right, below the wall, a village of thatched roofs with a thin line of smoke; straight ahead at eye level a huge snow-capped mountain range under fluffy white cumulus clouds in a bright blue sky, a winding dirt road across the rolling hills. Lighting: bright midday sun from the front-left, no backlight, no silhouette, every part of the character clearly visible. Palette: vivid saturated greens, warm golds, clear blue sky. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours. No text, no watermark.",
     "resolution": "1664x928",
     "seed": 42,
-    "num_inference_steps": 4
-   }
-  },
-  {
-   "id": "I02",
-   "name": "I02_sneaker_product",
-   "concept": "C02 Sneaker product",
-   "kind": "image",
-   "mode": "t2i",
-   "tier": "standard",
-   "origin": "mine",
-   "timeout_s": 600,
-   "note": "MY EXAMPLE (kept). Hard surface and material realism. Keyframe for V02.",
-   "settings": {
     "model_type": "qwen_image_20B",
-    "prompt": "Premium studio product photograph of a white-and-orange running sneaker standing on a matte grey circular pedestal against a seamless soft grey gradient backdrop. A single large soft key light from the upper left with a crisp rim light along the mesh upper, a faint glossy reflection of the sole on the floor, macro-level detail on the stitching, breathable mesh texture and the translucent foam midsole, shallow depth of field, 85 mm lens, clean commercial look, muted neutral palette with one vivid orange accent, no text, no logo.",
-    "resolution": "1664x928",
-    "seed": 42,
-    "num_inference_steps": 4
-   }
-  },
-  {
-   "id": "I03",
-   "name": "I03_neon_street_text",
-   "concept": "C03 Neon city night",
-   "kind": "image",
-   "mode": "t2i",
-   "tier": "standard",
-   "origin": "mine",
-   "timeout_s": 600,
-   "note": "MY EXAMPLE (kept). Text rendering ('OPEN 24 HOURS' spelling) + reflections. Keyframe for V03.",
-   "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Cinematic night street in a rain-soaked small Asian city. A glowing pink neon sign above a noodle-shop door reads exactly \"OPEN 24 HOURS\" in clean neon letters. Wet asphalt reflects pink and cyan light, a person in a dark coat walks past holding a yellow umbrella, a yellow taxi waits at the kerb with its headlights glowing softly, thin rain streaks catch the neon light, steam rising from a street-food stall, shallow depth of field, 35 mm lens, moody teal-and-magenta colour grading, photorealistic.",
-    "resolution": "1664x928",
-    "seed": 42,
-    "num_inference_steps": 4
-   }
-  },
-  {
-   "id": "I04",
-   "name": "I04_weathered_sailor_portrait",
-   "concept": "C04 Portrait",
-   "kind": "image",
-   "mode": "t2i",
-   "tier": "standard",
-   "origin": "mine",
-   "timeout_s": 600,
-   "note": "MY EXAMPLE (kept). Faces, skin, eyes, hands. Image only (no video).",
-   "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Close-up cinematic portrait of a weathered woman sailor in her fifties, deep-set grey eyes, salt-and-pepper hair tied back with loose strands blowing in the wind, a faint scar across the left eyebrow, a navy wool collar, soft overcast light from a window on her right, natural skin texture with fine pores and sun lines, shallow depth of field, 85 mm lens, muted tones, photorealistic.",
-    "resolution": "928x1664",
-    "seed": 42,
-    "num_inference_steps": 4
+    "num_inference_steps": 30,
+    "guidance_scale": 4,
+    "negative_prompt": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, distorted proportions, text artefacts, watermark"
    }
   },
   {
@@ -81,14 +29,16 @@
    "mode": "t2i",
    "tier": "standard",
    "origin": "pasted",
-   "timeout_s": 600,
-   "note": "PASTED (ai.multhouse). Pixar/DreamWorks 3D look. Keyframe for V05.",
+   "timeout_s": 900,
+   "note": "Pasted. 3D faces: both smiling, sharp eyes, clean background. Keyframe for V05.",
    "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Pixar-style 3D CGI animated film still, medium close-up. A gentle father in his early thirties with short, slightly tousled brown hair and a warm, patient, slightly puzzled expression, wearing a simple brown cotton t-shirt, kneels behind his cute toddler daughter and carefully tries to braid her long, silky blonde hair, a few loose strands already escaping between his big fingers. The toddler, about two years old, with round rosy cheeks and big bright blue eyes, sits cross-legged on a soft pastel rug in a cozy, brightly lit children's bedroom, wearing light pink pajamas with tiny star prints, absorbed in playing with a small plush doll she holds in both hands. Warm morning sunlight streams through a window on the left, creating soft rim light on the golden hair strands; the background is softly out of focus with pastel striped wallpaper, scattered plush toys, a wooden toy chest and a small bookshelf. Smooth stylised character modelling, expressive eyes, subsurface scattering on skin, finely detailed individually lit hair strands, soft shadows, shallow depth of field, rich warm colour grading, 3D animated feature-film quality.",
+    "prompt": "Pixar-style 3D CGI animated film still, medium close-up of a father and his toddler daughter, both smiling warmly with bright open eyes in sharp focus. The father, early thirties, short tousled brown hair, a brown cotton t-shirt, kneels behind his daughter and carefully tries to braid her long silky blonde hair, looking down at his work with a gentle smile. The toddler, about two years old, round rosy cheeks and big blue eyes, wearing light pink pyjamas with tiny stars, sits cross-legged on a pastel rug and smiles toward the camera while holding a small plush doll. A bright, cheerful children's bedroom lit by large daylight windows: pastel striped wallpaper, a wooden toy chest and a bookshelf, the background clean and sharp, not blurred. Smooth stylised character modelling, expressive faces, individually modelled hair strands, soft realistic shadows. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
     "resolution": "1664x928",
     "seed": 42,
-    "num_inference_steps": 4
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 30,
+    "guidance_scale": 4,
+    "negative_prompt": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, distorted proportions, text artefacts, watermark"
    }
   },
   {
@@ -99,32 +49,16 @@
    "mode": "t2i",
    "tier": "standard",
    "origin": "pasted",
-   "timeout_s": 600,
-   "note": "PASTED (bark__laugh_). Photoreal animals with props. Keyframe for V06.",
+   "timeout_s": 900,
+   "note": "Pasted. Photoreal animals; prompt forces real dog anatomy (the old result looked like dog heads on human bodies). Keyframe for V06.",
    "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Photorealistic cinematic wide shot inside a vintage New York yellow taxi cab. A funny black Labrador sits upright in the driver seat acting as the taxi driver, wearing a yellow vintage taxi cap, classic aviator sunglasses and a buttoned yellow driver's uniform shirt with a collar, both front paws resting on the large steering wheel. In the front passenger seat, a brown golden-retriever-mix dog sits upright with a curious expression, looking around. Realistic fur texture with individual hairs catching the light, warm natural daylight streaming through the windshield, detailed taxi interior with dashboard, fare meter, seatbelt and yellow cab trim, a softly blurred city street with moving traffic seen through the windows, 35 mm photograph look, shot on a full-frame camera, natural colours.",
+    "prompt": "Photorealistic cinematic photograph inside a yellow New York taxi cab in bright daylight. A black Labrador sits upright on the driver seat like a real dog (natural dog anatomy, dog head and dog body, no human body), wearing a yellow taxi driver cap and aviator sunglasses, a yellow uniform shirt draped over its chest, both front paws resting on the steering wheel. On the front passenger seat sits a golden-retriever-mix dog looking curiously at the driver. Detailed taxi interior with dashboard, fare meter and seatbelt, the city street clearly visible through the windshield. Realistic fur with individual hairs, sharp eyes, natural colours, 35 mm lens. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
     "resolution": "1664x928",
     "seed": 42,
-    "num_inference_steps": 4
-   }
-  },
-  {
-   "id": "I07",
-   "name": "I07_baby_lawyer_court",
-   "concept": "C07 Baby lawyer in court",
-   "kind": "image",
-   "mode": "t2i",
-   "tier": "standard",
-   "origin": "pasted",
-   "timeout_s": 600,
-   "note": "PASTED (ai_babay_funland). Photoreal child + cultural setting + crowd. Keyframe for V07.",
-   "settings": {
     "model_type": "qwen_image_20B",
-    "prompt": "Photorealistic cinematic wide shot inside a traditional Indian courtroom. A cute chubby-cheeked toddler boy aged two, wearing a miniature sharp dark navy business suit, a white collared shirt and a black necktie, stands on a small wooden step stool in front of the judge's high carved wooden bench, one tiny hand raised as if making a point. Behind the bench a senior judge in black robes looks down at the baby with a warm smile. In the softly blurred background: lawyers in black coats and white bands, a uniformed police officer and audience members seated on wooden benches. Polished wooden textures, warm ambient light mixed with soft overhead fluorescents, realistic skin texture, cinematic depth of field, 35 mm lens, natural colours.",
-    "resolution": "1664x928",
-    "seed": 42,
-    "num_inference_steps": 4
+    "num_inference_steps": 30,
+    "guidance_scale": 4,
+    "negative_prompt": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, distorted proportions, text artefacts, watermark"
    }
   },
   {
@@ -135,33 +69,18 @@
    "mode": "t2i",
    "tier": "standard",
    "origin": "pasted",
-   "timeout_s": 600,
-   "note": "PASTED (vaibhavsisinty). The AVATAR example: this fictional person is generated first, then made to talk in V08.",
+   "timeout_s": 900,
+   "note": "Pasted. THE AVATAR. Prompt now asks for a BRIGHT studio (the old prompt literally asked for a 'dark-themed studio'). Member of the 'avatar image' sweep.",
    "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties with short dark hair and a neat short beard, wearing a plain black t-shirt, seated at a desk in a modern dark-themed studio. Soft cyan and orange neon accent lights glow behind him, a warm key light on his face, a blurred monitor and shelf with small gadgets in the background. He looks straight into the camera with a confident half-smile, relaxed shoulders, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin detail, shallow depth of field, 35 mm lens.",
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
     "resolution": "928x1664",
     "seed": 42,
-    "num_inference_steps": 4
-   }
-  },
-  {
-   "id": "I09",
-   "name": "I09_ganesha_mushak_army",
-   "concept": "C09 Ganesha and mouse army",
-   "kind": "image",
-   "mode": "t2i",
-   "tier": "standard",
-   "origin": "pasted",
-   "timeout_s": 600,
-   "note": "PASTED (yogesh_bhusare). Many small characters, ornate details, 3D CGI. Keyframe for V09.",
-   "settings": {
     "model_type": "qwen_image_20B",
-    "prompt": "Cinematic 3D CGI render, wide-angle hero shot, Pixar-style character design. A cute, majestic young Lord Ganesha walks forward in a grand ancient stone temple courtyard, wearing an ornate gold crown, jewelled ornaments and a vibrant silk dhoti. Marching behind and beside him is a large, orderly army of adorable tiny anthropomorphic 3D mice (Mushaks) in small saffron wraps and traditional headbands, some carrying tiny flags and drums. Divine golden volumetric light rays break through the clouds, flower petals and soft dust particles float in the air, hyper-detailed fabric and metal textures, warm festive colour palette, shallow depth of field, reverent and joyful atmosphere.",
-    "resolution": "928x1664",
-    "seed": 42,
-    "num_inference_steps": 4
-   }
+    "num_inference_steps": 30,
+    "guidance_scale": 4,
+    "negative_prompt": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, distorted proportions, text artefacts, watermark"
+   },
+   "sweep": "avatar image"
   },
   {
    "id": "I10",
@@ -171,14 +90,16 @@
    "mode": "t2i",
    "tier": "smoke",
    "origin": "pasted",
-   "timeout_s": 600,
-   "note": "PASTED (toddler prompt). The ONE image behind the kids' blood story: V10a, V10b and V10c all start from it.",
+   "timeout_s": 900,
+   "note": "Pasted. The one image behind the kids' blood story (V10a-c).",
    "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Pixar-style 3D render of a cute toddler lying on a cozy bed in a softly lit rustic bedroom, vibrant wallpaper with rabbit and mushroom illustrations. The toddler is wearing patterned pajamas, lying down with heavy sleepy eyes, one small hand resting on the blanket. Warm indoor lamp lighting, shallow depth of field, high detail, volumetric ambient light, smooth CGI textures, cinematic colour grading.",
+    "prompt": "Pixar-style 3D render of a cute toddler lying on a cozy bed in a bright rustic bedroom, wallpaper with rabbit and mushroom illustrations. The toddler wears patterned pyjamas, lies down with heavy sleepy eyes, one small hand resting on the blanket. Daylight from a window plus a warm bedside lamp, the whole room clearly lit, smooth CGI textures, sharp details on the face and hand. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
     "resolution": "928x1664",
     "seed": 42,
-    "num_inference_steps": 4
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 30,
+    "guidance_scale": 4,
+    "negative_prompt": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, distorted proportions, text artefacts, watermark"
    }
   },
   {
@@ -190,78 +111,18 @@
    "tier": "standard",
    "origin": "mine",
    "timeout_s": 900,
-   "note": "MY EXAMPLE (kept). Image-to-video from I01.",
+   "note": "Image-to-video from I01.",
    "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "The painted Ghibli scene comes to life. The young man's turquoise tunic and cloak ripple in a steady breeze, he slowly turns his head to look across the valley and takes one calm step forward on the wall. Clouds drift slowly across the sky, thin smoke rises and sways from the village chimneys, grass on the hills ripples in waves, a few birds cross the sky. The camera starts static, then performs a slow, gentle push-in over ten seconds. Warm golden-hour light, painterly gouache texture preserved, hand-drawn animation feel. Audio: steady wind, distant birdsong, a soft solo flute melody, faint cloth flutter.",
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward. White clouds drift across the blue sky, thin smoke sways above the village, the grass on the hills ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly over ten seconds. Hand-drawn animation feel, clean crisp lines, vivid colours. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: steady wind, distant birdsong, a soft solo flute melody.",
     "resolution": "1280x704",
     "video_length": 241,
     "seed": 42,
+    "model_type": "ltx2_22B_distilled",
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
-   "needs": "I01_ghibli_traveler"
-  },
-  {
-   "id": "V02",
-   "name": "V02_sneaker_ad_10s",
-   "concept": "C02 Sneaker product",
-   "kind": "video",
-   "mode": "i2v",
-   "tier": "standard",
-   "origin": "mine",
-   "timeout_s": 900,
-   "note": "MY EXAMPLE (kept). Rigid object, controlled motion, reflections. Image-to-video from I02.",
-   "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Premium product commercial. The white-and-orange running sneaker rotates slowly and smoothly clockwise on the grey pedestal. A single soft key light sweeps from left to right across the sneaker, creating a moving highlight along the mesh upper and a crisp reflection on the glossy floor. The camera performs a smooth low-angle orbit, then glides in to a macro close-up of the stitching and sole texture, then pulls back. Seamless backdrop, no wobble, rigid object, clean commercial look. Audio: a subtle rising synth whoosh, a soft click as the light settles, a clean low bass pulse.",
-    "resolution": "1280x704",
-    "video_length": 241,
-    "seed": 42,
-    "num_inference_steps": 8,
-    "image_prompt_type": "S"
-   },
-   "needs": "I02_sneaker_product"
-  },
-  {
-   "id": "V03",
-   "name": "V03_neon_street_rain_10s",
-   "concept": "C03 Neon city night",
-   "kind": "video",
-   "mode": "i2v",
-   "tier": "standard",
-   "origin": "mine",
-   "timeout_s": 900,
-   "note": "MY EXAMPLE (kept). Reflections, several moving subjects, ambient audio. Image-to-video from I03.",
-   "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "The rainy neon street comes alive. Rain falls steadily and streaks through the pink and cyan neon light. The person with the yellow umbrella walks calmly from right to left past the noodle shop, ripples spread in the puddles, the yellow taxi at the kerb pulls away slowly with wipers moving and its tail-lights flaring softly. Steam drifts up from the food stall. Smooth slow dolly-back, shallow depth of field, neon reflections shimmer on the wet asphalt. The neon sign stays legible. Audio: steady rain, tyres splashing, a muffled traffic hum, a distant siren, a faint electric buzz from the neon.",
-    "resolution": "1280x704",
-    "video_length": 241,
-    "seed": 42,
-    "num_inference_steps": 8,
-    "image_prompt_type": "S"
-   },
-   "needs": "I03_neon_street_text"
-  },
-  {
-   "id": "V04",
-   "name": "V04_waterfall_nature_10s",
-   "concept": "C11 Waterfall",
-   "kind": "video",
-   "mode": "t2v",
-   "tier": "smoke",
-   "origin": "mine",
-   "timeout_s": 900,
-   "note": "MY EXAMPLE (kept). TEXT-to-video (no image): the t2v reference for comparing with the image-to-video cases. Fluids, particles.",
-   "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Nature-documentary shot of a tall forest waterfall plunging into a turquoise pool, ferns and wet mossy rocks in the foreground, mist drifting through shafts of morning sunlight between the trees. The camera slowly tilts up from the pool to the top of the falls over ten seconds. The water flows smoothly and continuously, droplets sparkle, leaves sway gently, a dragonfly crosses the foreground. Natural colours, crisp detail, 35 mm cinematic look. Audio: the deep roar of falling water, light birdsong, distant rustling leaves.",
-    "resolution": "1280x704",
-    "video_length": 241,
-    "seed": 42,
-    "num_inference_steps": 8
-   }
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
   },
   {
    "id": "V05",
@@ -272,13 +133,13 @@
    "tier": "standard",
    "origin": "pasted",
    "timeout_s": 1000,
-   "note": "PASTED (ai.multhouse). Image-to-video from I05. Watch hands and hair physics.",
+   "note": "Image-to-video from I05. Watch hands, hair and both faces.",
    "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Cinematic 3D CGI animation, slow subtle camera drift to the right. The father gently gathers three sections of his daughter's blonde hair and clumsily crosses them over each other, his eyebrows knitting in concentration, then he pauses and tilts his head with a puzzled smile as a strand slips loose. The toddler sways a little from side to side, giggles, makes her small doll hop in her hands and glances up at her dad with a cheeky grin. Natural hair physics, soft eye blinks, small breathing motion, warm sunlight shifting softly. Audio: the toddler's soft giggles, the father's low amused hum, quiet fabric rustles, faint birds outside the window, a gentle playful ukulele melody.",
+    "prompt": "Cinematic 3D CGI animation, slow subtle camera drift to the right. The father gently gathers three sections of his daughter's blonde hair and crosses them over each other, then pauses and smiles as a strand slips loose; he glances at his daughter and they both laugh. The toddler sways from side to side, giggles, makes her small doll hop in her hands and smiles at the camera. Both faces stay clearly visible, smiling, with bright eyes in sharp focus. Natural hair physics, soft blinks. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: the toddler's soft giggles, the father's low amused hum, quiet fabric rustles, a gentle playful ukulele melody.",
     "resolution": "1280x704",
     "video_length": 289,
     "seed": 42,
+    "model_type": "ltx2_22B_distilled",
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
@@ -293,38 +154,17 @@
    "tier": "standard",
    "origin": "pasted",
    "timeout_s": 900,
-   "note": "PASTED (bark__laugh_). Image-to-video from I06. Animal motion and props staying on the dogs.",
+   "note": "Image-to-video from I06.",
    "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Cinematic live-action video, subtle handheld camera movement inside a moving taxi cab. The black Labrador driver slightly turns its head toward the passenger while wearing the aviator sunglasses, panting gently with a relaxed expression, one paw adjusting on the steering wheel. The golden retriever passenger blinks, tilts its head and glances at the driver. Soft background motion blur through the windows as the taxi drives down a city street, light and shadow from passing buildings sweep across the dashboard. Photorealistic, natural fur motion. Audio: engine hum, soft city traffic, a quiet fare-meter tick, a short friendly dog huff.",
+    "prompt": "Cinematic live-action video, subtle handheld camera movement inside a moving taxi cab in bright daylight. The black Labrador driver turns its head toward the passenger, panting gently, one paw adjusting on the steering wheel; the aviator sunglasses and cap stay on its dog head. The golden retriever passenger blinks, tilts its head and glances at the driver. Real dog bodies throughout, natural fur motion. City buildings slide past the windows, light and shadow sweep across the dashboard. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: engine hum, soft city traffic, a quiet fare-meter tick, a short friendly dog huff.",
     "resolution": "1280x704",
     "video_length": 241,
     "seed": 42,
+    "model_type": "ltx2_22B_distilled",
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
    "needs": "I06_dog_taxi_driver"
-  },
-  {
-   "id": "V07",
-   "name": "V07_baby_lawyer_speaks_12s",
-   "concept": "C07 Baby lawyer in court",
-   "kind": "video",
-   "mode": "i2v",
-   "tier": "standard",
-   "origin": "pasted",
-   "timeout_s": 1000,
-   "note": "PASTED (ai_babay_funland). Image-to-video from I07 with SPOKEN dialogue: listen for lip sync.",
-   "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Realistic live-action video inside the courtroom, subtle handheld camera movement. The toddler in the suit gestures animatedly with tiny hands and says in a small, confident voice: \"Your Honour, my client only wants ten more minutes of cartoons.\" He raises his head toward the judge as he speaks. The senior judge nods slightly and breaks into a warm chuckle; a ripple of amusement runs through the people in the background. Natural blinks, clear mouth movement matching the words, soft depth of field. Audio: the toddler's clear speech, the judge's chuckle, low murmurs and light laughter, a ceiling-fan hum, one soft tap of a wooden gavel.",
-    "resolution": "1280x704",
-    "video_length": 289,
-    "seed": 42,
-    "num_inference_steps": 8,
-    "image_prompt_type": "S"
-   },
-   "needs": "I07_baby_lawyer_court"
   },
   {
    "id": "V08",
@@ -335,55 +175,34 @@
    "tier": "standard",
    "origin": "pasted",
    "timeout_s": 1200,
-   "note": "PASTED (vaibhavsisinty). THE AVATAR EXAMPLE: image-to-video from I08, 15 s of speech, 9:16. Listen for lip sync and clarity.",
+   "note": "THE AVATAR: image-to-video from I08, 15 s of speech, 9:16. Listen for lip sync and clarity.",
    "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "A realistic AI digital presenter speaks directly to the camera in a fast, energetic tech-influencer tone. He says: \"Stop paying twenty dollars a month for every AI tool. Pick an open model, grab a free test key, paste it into your editor, and you're running in minutes. Link in bio.\" Natural lip sync, subtle head tilts and nods, authentic eye blinks, two quick hand gestures for emphasis, natural breathing. Static camera with a very slight push-in, steady lighting, the cyan and orange neon glow flickering softly behind him. Audio: his clear voice, a quiet upbeat electronic music bed.",
+    "prompt": "A realistic AI digital presenter in a brightly lit studio speaks directly to the camera in a fast, energetic tech-influencer tone. He says: \"Stop paying twenty dollars a month for every AI tool. Pick an open model, grab a free test key, paste it into your editor, and you're running in minutes. Link in bio.\" Natural lip sync, subtle head tilts and nods, authentic eye blinks, two quick hand gestures for emphasis, natural breathing. Static camera with a very slight push-in, steady bright lighting on his face. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: his clear voice, a quiet upbeat electronic music bed.",
     "resolution": "704x1280",
     "video_length": 361,
     "seed": 42,
+    "model_type": "ltx2_22B_distilled",
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
    "needs": "I08_ai_avatar_presenter"
   },
   {
-   "id": "V09",
-   "name": "V09_ganesha_mushak_march_12s",
-   "concept": "C09 Ganesha and mouse army",
-   "kind": "video",
-   "mode": "i2v",
-   "tier": "standard",
-   "origin": "pasted",
-   "timeout_s": 1000,
-   "note": "PASTED (yogesh_bhusare). Image-to-video from I09. Many small characters moving in step.",
-   "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Epic cinematic 3D animation, slow-motion tracking camera moving backward in front of the procession. Lord Ganesha walks forward with a gentle, confident smile. The army of tiny mice marches in step, bobbing their heads and moving their feet smoothly, flags swaying. Floating golden light rays, soft flower petals gently falling around them, fabric and ornament motion natural. Audio: festive dhol drums, temple bells, soft footsteps, a distant gentle conch.",
-    "resolution": "704x1280",
-    "video_length": 289,
-    "seed": 42,
-    "num_inference_steps": 8,
-    "image_prompt_type": "S"
-   },
-   "needs": "I09_ganesha_mushak_army"
-  },
-  {
    "id": "V10a",
-   "name": "V10a_blood_story_a_toddler_5s",
+   "name": "V10a_blood_story_a_architecture_5s",
    "concept": "C10 Toddler and blood story",
    "kind": "video",
    "mode": "i2v",
    "tier": "smoke",
    "origin": "pasted",
    "timeout_s": 600,
-   "note": "PASTED (toddler motion prompt). Clip 1 of 3, image-to-video from I10.",
+   "note": "Clip 1 of 3 (architecture): the pasted yawn prompt, then the dive into the vessel. From I10.",
    "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Cinematic 3D animation, subtle slow-motion camera drift. The toddler slowly yawns, eyelids drooping sleepily. The toddler gently sways and rocks side to side on the bed in a continuous self-soothing motion, smoothly breathing. Soft warm ambient glow, fluid character movement, seamless 3D CGI motion. Audio: a soft lullaby music box, quiet breathing.",
+    "prompt": "Cinematic 3D animation for children. The toddler slowly yawns, eyelids drooping sleepily. The camera glides toward the toddler's small hand on the blanket; the skin turns softly see-through in a friendly glowing cartoon way, revealing a bright, clearly lit blood vessel. Pale-yellow liquid plasma flows through it carrying round red cells, big white cells and tiny star-shaped platelets. Kid-safe, no gore. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: a calm friendly narrator says: \"Blood is a river. Plasma carries three kinds of cells.\" A soft lullaby music box.",
     "resolution": "704x1280",
     "video_length": 121,
     "seed": 42,
+    "model_type": "ltx2_22B_distilled",
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
@@ -399,13 +218,13 @@
    "tier": "standard",
    "origin": "pasted",
    "timeout_s": 600,
-   "note": "NEW (kids health). Clip 2 of 3 from the SAME image I10: does image-to-video go 'inside the body'? Exploratory.",
+   "note": "Clip 2 of 3: red blood cells and what fails without them. From the SAME image I10.",
    "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Cinematic 3D animation for children. The camera glides slowly toward the sleeping toddler's small hand resting on the blanket; the skin turns softly transparent in a friendly, glowing cartoon way, revealing a warm-lit blood vessel. Round, smiling cartoon red blood cells float along in single file, carrying tiny glowing blue oxygen bubbles, bobbing and spinning gently. Soft magical glow, kid-safe, no gore. Audio: a calm friendly narrator says: \"Red blood cells carry oxygen all around your body.\" Soft heartbeat rhythm and gentle chimes.",
+    "prompt": "Cinematic 3D animation for children inside a bright, clearly lit blood vessel. Round smiling cartoon red blood cells float along in single file, each carrying tiny glowing blue oxygen bubbles, and hand them to small cartoon muscle cells that light up happily. A second shot idea: when the red cells are missing, the muscle cells droop and turn grey. Kid-safe, no gore. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: a calm friendly narrator says: \"Red cells carry oxygen. Without them, no energy.\" Gentle chimes, a soft heartbeat.",
     "resolution": "704x1280",
     "video_length": 121,
     "seed": 42,
+    "model_type": "ltx2_22B_distilled",
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
@@ -421,13 +240,13 @@
    "tier": "standard",
    "origin": "pasted",
    "timeout_s": 600,
-   "note": "NEW (kids health). Clip 3 of 3 from the SAME image I10. Exploratory.",
+   "note": "Clip 3 of 3: white cells, platelets, plasma and what fails without each. From the SAME image I10.",
    "settings": {
-    "model_type": "ltx2_22B_distilled",
-    "prompt": "Cinematic 3D animation for children, continuing inside the same glowing blood vessel. Big friendly white blood cells in cartoon guard uniforms bounce toward a small, grumpy green germ and gently pop it with a puff of sparkles, while tiny star-shaped platelets stick together to patch a little scrape on the vessel wall. Soft magical glow, kid-safe, no gore. Audio: a calm friendly narrator says: \"White blood cells protect you from germs, and platelets fix cuts.\" Gentle chimes and a soft heartbeat.",
+    "prompt": "Cinematic 3D animation for children inside the same bright blood vessel. Friendly big white blood cells in little guard uniforms bounce toward a grumpy green germ and pop it with a puff of sparkles; tiny star-shaped platelets stick together to patch a small scrape on the vessel wall; the pale-yellow plasma keeps everything flowing. Kid-safe, no gore. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: a calm friendly narrator says: \"No white cells, germs win. No platelets, cuts keep bleeding. No plasma, nothing flows.\" Gentle chimes.",
     "resolution": "704x1280",
     "video_length": 121,
     "seed": 42,
+    "model_type": "ltx2_22B_distilled",
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
@@ -443,89 +262,318 @@
    "tier": "standard",
    "origin": "pasted",
    "parts": [
-    "V10a_blood_story_a_toddler_5s",
+    "V10a_blood_story_a_architecture_5s",
     "V10b_blood_story_b_red_cells_5s",
     "V10c_blood_story_c_white_cells_platelets_5s"
    ],
-   "note": "THE STITCH EXAMPLE: 3 clips x 5 s -> one 15 s video (ffmpeg concat, hard cuts). Check the two seams at 5 s and 10 s.",
+   "note": "THE STITCH EXAMPLE: 3 x 5 s clips -> one 15 s kids' blood-biology video (plasma + 3 cell types, and what fails without each). Check the seams at 5 s and 10 s.",
    "settings": {
     "seam_strip": true
    }
   },
   {
-   "id": "I11",
-   "name": "I11_ghibli_quote_text_9x16",
-   "concept": "X1 Ghibli quote poster",
+   "id": "L01",
+   "name": "L01_avatar_qwen_4steps_old_config",
+   "concept": "LAB avatar image",
    "kind": "image",
    "mode": "t2i",
-   "tier": "full",
-   "origin": "pasted",
-   "timeout_s": 600,
-   "note": "EXTRA, PASTED (Ghibli quote image). Long text rendering.",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 900,
+   "note": "OLD config (4 steps, no guidance, no negative prompt) = what produced the poor images. Control.",
    "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Studio Ghibli inspired 2D anime illustration, vertical poster. Medium full shot of a male anime character with brown messy hair, seen from behind, wearing a turquoise tunic and a brown belt, a sheathed sword strapped to his back, standing at a crumbling mossy stone fortress ruin overlooking a vibrant rolling green landscape with a winding dirt path. Soft golden daylight, massive fluffy white clouds in a bright blue sky, painterly textures, classic anime movie aesthetic, high detail. Large, centred, clean white sans-serif text across the upper-middle sky reading exactly: \"We cannot become what we want by remaining what we are.\"",
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
     "resolution": "928x1664",
     "seed": 42,
+    "model_type": "qwen_image_20B",
     "num_inference_steps": 4
-   }
+   },
+   "sweep": "avatar image"
   },
   {
-   "id": "I12",
-   "name": "I12_startup_flowchart_infographic",
-   "concept": "X2 Infographic",
+   "id": "L02",
+   "name": "L02_avatar_qwen_model_defaults",
+   "concept": "LAB avatar image",
    "kind": "image",
    "mode": "t2i",
-   "tier": "full",
-   "origin": "pasted",
-   "timeout_s": 600,
-   "note": "EXTRA, PASTED (start-up flowchart). Many small text labels: a hard test for text rendering.",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 900,
+   "note": "Only model, prompt, size, seed: shows what Wan2GP's own defaults for this model give.",
    "settings": {
-    "model_type": "qwen_image_20B",
-    "prompt": "Clean flat vector infographic in dark red and charcoal grey on a light background, a segmented flowchart titled \"How to Start a Start-Up\". Three horizontal rows with clear minimalist icons and short labels joined by arrows: row 1 IDEATION (lightbulb: \"Missing world element\", prototype: \"Prototype\", people: \"100 people review\"); row 2 FOUNDATIONS (coins: \"Funding\", document: \"Register\", two people: \"Find co-founder\", loop arrow: \"Iterate\"); row 3 GROWTH (rocket: \"Launch\", users: \"1000 users\", chart: \"5% weekly growth\", trophy on a pedestal: \"SUCCESS\"). Crisp lines, consistent icon style, professional design.",
-    "resolution": "1664x928",
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
+    "resolution": "928x1664",
     "seed": 42,
-    "num_inference_steps": 4
-   }
+    "model_type": "qwen_image_20B"
+   },
+   "sweep": "avatar image"
   },
   {
-   "id": "I13",
-   "name": "I13_father_braids_hair_seed_b",
-   "concept": "C05 Father braids hair",
+   "id": "L03",
+   "name": "L03_avatar_qwen_50steps",
+   "concept": "LAB avatar image",
    "kind": "image",
    "mode": "t2i",
-   "tier": "full",
-   "origin": "pasted",
-   "timeout_s": 600,
-   "note": "EXTRA. Same as I05 with another seed: how much does the seed change the result?",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1500,
+   "note": "Official Qwen-Image recipe: 50 steps, CFG 4, negative prompt.",
    "settings": {
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
+    "resolution": "928x1664",
+    "seed": 42,
     "model_type": "qwen_image_20B",
-    "prompt": "Pixar-style 3D CGI animated film still, medium close-up. A gentle father in his early thirties with short, slightly tousled brown hair and a warm, patient, slightly puzzled expression, wearing a simple brown cotton t-shirt, kneels behind his cute toddler daughter and carefully tries to braid her long, silky blonde hair, a few loose strands already escaping between his big fingers. The toddler, about two years old, with round rosy cheeks and big bright blue eyes, sits cross-legged on a soft pastel rug in a cozy, brightly lit children's bedroom, wearing light pink pajamas with tiny star prints, absorbed in playing with a small plush doll she holds in both hands. Warm morning sunlight streams through a window on the left, creating soft rim light on the golden hair strands; the background is softly out of focus with pastel striped wallpaper, scattered plush toys, a wooden toy chest and a small bookshelf. Smooth stylised character modelling, expressive eyes, subsurface scattering on skin, finely detailed individually lit hair strands, soft shadows, shallow depth of field, rich warm colour grading, 3D animated feature-film quality.",
-    "resolution": "1664x928",
-    "seed": 1234,
-    "num_inference_steps": 4
-   }
+    "num_inference_steps": 50,
+    "guidance_scale": 4,
+    "negative_prompt": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, distorted proportions, text artefacts, watermark"
+   },
+   "sweep": "avatar image"
   },
   {
-   "id": "V11",
-   "name": "V11_ghibli_traveler_1080p_10s",
-   "concept": "C01 Ghibli traveler",
+   "id": "L04",
+   "name": "L04_avatar_qwen_image_2_1",
+   "concept": "LAB avatar image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1500,
+   "note": "Qwen Image 2.1 (newer; vendor recipe is 40 steps, CFG off). Model's own defaults. SKIPPED if the box's Wan2GP is too old.",
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
+    "resolution": "928x1664",
+    "seed": 42
+   },
+   "model_match": [
+    "Qwen.*Image.*2\\.1",
+    "qwen.*21"
+   ],
+   "sweep": "avatar image"
+  },
+  {
+   "id": "L05",
+   "name": "L05_avatar_krea2",
+   "concept": "LAB avatar image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "Krea 2 ('most aesthetic open image model' per Wan2GP). Model defaults. SKIPPED if absent.",
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
+    "resolution": "928x1664",
+    "seed": 42
+   },
+   "model_match": [
+    "Krea ?2",
+    "krea_?2"
+   ],
+   "sweep": "avatar image"
+  },
+  {
+   "id": "L06",
+   "name": "L06_avatar_z_image_turbo",
+   "concept": "LAB avatar image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 900,
+   "note": "Z-Image Turbo (8 steps, fast). Model defaults.",
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
+    "resolution": "928x1664",
+    "seed": 42
+   },
+   "model_match": [
+    "Z.?Image.*Turbo",
+    "z_image"
+   ],
+   "sweep": "avatar image"
+  },
+  {
+   "id": "L07",
+   "name": "L07_avatar_flux2_klein_9b",
+   "concept": "LAB avatar image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 900,
+   "note": "Flux 2 Klein 9B. Model defaults.",
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a friendly, energetic male tech content creator in his early thirties, short dark hair and a neat short beard, a plain black t-shirt, seated at a desk in a brightly lit modern studio. A strong soft key light on his face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind him in focus. He looks straight into the camera with a confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture. Bright, well-exposed, evenly lit, crisp focus, high detail, clean sharp edges, vivid natural colours.",
+    "resolution": "928x1664",
+    "seed": 42
+   },
+   "model_match": [
+    "Klein.*9B",
+    "flux2.*klein.*9"
+   ],
+   "sweep": "avatar image"
+  },
+  {
+   "id": "L10",
+   "name": "L10_ghibli_single_phase",
+   "concept": "LAB ghibli video",
    "kind": "video",
    "mode": "i2v",
-   "tier": "full",
-   "origin": "mine",
+   "tier": "lab",
+   "origin": "lab",
    "timeout_s": 1500,
-   "note": "EXTRA. Same as V01 at 1080p: VRAM and time. An OOM here is a finding.",
+   "note": "Single high-res phase instead of 2 phases (changelog: slower, more VRAM, 'potentially higher quality'). Key guidance_phases=1 is UNVERIFIED; results.phases_seen shows whether it took effect.",
    "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward. White clouds drift across the blue sky, thin smoke sways above the village, the grass on the hills ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly over ten seconds. Hand-drawn animation feel, clean crisp lines, vivid colours. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
     "model_type": "ltx2_22B_distilled",
-    "prompt": "The painted Ghibli scene comes to life. The young man's turquoise tunic and cloak ripple in a steady breeze, he slowly turns his head to look across the valley and takes one calm step forward on the wall. Clouds drift slowly across the sky, thin smoke rises and sways from the village chimneys, grass on the hills ripples in waves, a few birds cross the sky. The camera starts static, then performs a slow, gentle push-in over ten seconds. Warm golden-hour light, painterly gouache texture preserved, hand-drawn animation feel. Audio: steady wind, distant birdsong, a soft solo flute melody, faint cloth flutter.",
-    "resolution": "1920x1088",
+    "num_inference_steps": 8,
+    "guidance_phases": 1,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L11",
+   "name": "L11_ghibli_distilled_1_1",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1500,
+   "note": "LTX-2.3 Distilled 1.1 ('better audio and visuals' per changelog). SKIPPED if not on the box.",
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward. White clouds drift across the blue sky, thin smoke sways above the village, the grass on the hills ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly over ten seconds. Hand-drawn animation feel, clean crisp lines, vivid colours. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
     "video_length": 241,
     "seed": 42,
     "num_inference_steps": 8,
     "image_prompt_type": "S"
    },
-   "needs": "I01_ghibli_traveler"
+   "needs": "I01_ghibli_traveler",
+   "model_match": [
+    "Distilled 1\\.1",
+    "distilled_1_1"
+   ],
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L12",
+   "name": "L12_ghibli_ltx_2_5",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1500,
+   "note": "LTX 2.5 (upstream model list). SKIPPED if the box's Wan2GP is too old.",
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward. White clouds drift across the blue sky, thin smoke sways above the village, the grass on the hills ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly over ten seconds. Hand-drawn animation feel, clean crisp lines, vivid colours. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "model_match": [
+    "LTX-?\\s?2\\.5.*Distilled",
+    "LTX-?\\s?2\\.5"
+   ],
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L13",
+   "name": "L13_ghibli_dev_defaults",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 2400,
+   "note": "LTX-2.3 Dev with the model's own defaults (slower, non-distilled).",
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward. White clouds drift across the blue sky, thin smoke sways above the village, the grass on the hills ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly over ten seconds. Hand-drawn animation feel, clean crisp lines, vivid colours. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "model_match": [
+    "LTX.*\\bDev\\b",
+    "^ltx2_22B "
+   ],
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L14",
+   "name": "L14_ghibli_1080p",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1500,
+   "note": "Same as V01 at 1920x1088 (LTX 'shines' at 720p/1080p).",
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward. White clouds drift across the blue sky, thin smoke sways above the village, the grass on the hills ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly over ten seconds. Hand-drawn animation feel, clean crisp lines, vivid colours. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1920x1088",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L15",
+   "name": "L15_ghibli_negative_nag",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1500,
+   "note": "Negative prompt + NAG for the distilled model (changelog: NAG lets distilled use a negative prompt). Key NAG_scale is UNVERIFIED.",
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward. White clouds drift across the blue sky, thin smoke sways above the village, the grass on the hills ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly over ten seconds. Hand-drawn animation feel, clean crisp lines, vivid colours. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "negative_prompt": "dark, underexposed, foggy, hazy, blurry, low contrast, washed out, flicker, distorted faces, extra limbs, subtitles, watermark",
+    "NAG_scale": 3,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L16",
+   "name": "L16_waterfall_t2v_bright",
+   "concept": "LAB text-to-video",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1000,
+   "note": "Text-to-video with the rewritten bright prompt (the old one asked for 'mist drifting through shafts of sunlight', i.e. haze).",
+   "settings": {
+    "prompt": "Nature-documentary shot of a tall forest waterfall plunging into a turquoise pool, ferns and wet mossy rocks in the foreground, bright morning sunlight, crystal-clear air. The camera slowly tilts up from the pool to the top of the falls over ten seconds. The water flows smoothly, droplets sparkle, leaves sway, a dragonfly crosses the foreground. Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Audio: the deep roar of falling water, light birdsong, distant rustling leaves.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8
+   }
   }
  ]
 }

@@ -58,11 +58,17 @@ on:
         options: ["false", "true"]
         default: "false"
       suite_tier:
-        description: "render_test only. smoke = 3 cases (toddler image, 5 s image-to-video clip, 10 s text-to-video; about 15 min). standard = YOUR set: 10 images + 10 videos of 10-15 s (incl. the AI avatar and the 3-clip stitched 15 s video), 22 generations + 1 stitch, about 40-55 min. full = standard + 4 optional extras (1080p, 2 text-heavy images, a second seed). - suite_tier -"
+        description: "render_test only. smoke = 2 cases (toddler image + 5 s clip). standard = the requested set: 5 images + 5 videos of 10-15 s with tuned prompts and proper sampling (about 45-60 min). lab = standard + single-variable sweeps that find the quality fix: Qwen 4 vs 30 vs 50 steps, newer image models, LTX Distilled 1.1 / 2.5 / Dev / single-phase / 1080p (about 2-2.5 h, needs wan2gp_update=true for the newer models). - suite_tier -"
         required: false
         type: choice
-        options: ["smoke", "standard", "full"]
+        options: ["smoke", "standard", "lab"]
         default: "smoke"
+      wan2gp_update:
+        description: "'true' = update Wan2GP on the box to the latest main before starting (adds Qwen Image 2.1, Krea 2, LTX-2.5, Distilled 1.1). Rolls back if the update fails to start. Needed for the newer models in the lab tier. - wan2gp_update -"
+        required: false
+        type: choice
+        options: ["false", "true"]
+        default: "false"
       hold_min:
         description: "run only: keep the instance up this many minutes for a manual render test (max 60), then destroy - hold_min - "
         required: false
@@ -101,7 +107,7 @@ env:
 jobs:
   gpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 260
+    timeout-minutes: 330
     env:
       VAST_KEY: ${{ secrets.LTX2_GPU_VAST_API_KEY }}
       HF_TOKEN_VALUE: ${{ secrets.LTX2_GPU_HF_TOKEN }}
@@ -327,7 +333,8 @@ jobs:
           # This is what was silently eating the local `timeout 20` budget
           # and killing the step with exit 124 before polling ever began.
           PREDL=$([ "${{ github.event.inputs.predownload }}" = "true" ] && echo 1 || echo 0)
-          timeout 20 $SSH -f "export HF_TOKEN=\$(cat ~/.hf_token) PREDOWNLOAD=$PREDL && \
+          UPDL=$([ "${{ github.event.inputs.wan2gp_update }}" = "true" ] && echo 1 || echo 0)
+          timeout 20 $SSH -f "export HF_TOKEN=\$(cat ~/.hf_token) PREDOWNLOAD=$PREDL WANGP_UPDATE=$UPDL && \
             nohup bash -c 'bash preflight.sh && bash bootstrap.sh && bash start.sh' \
             > ~/deploy.log 2>&1 < /dev/null & disown; echo LAUNCHED" < /dev/null
 
@@ -400,7 +407,7 @@ jobs:
 
       - name: Render suite — images + videos on the live box, pull results
         if: ${{ github.event.inputs.action == 'run' && github.event.inputs.render_test == 'true' }}
-        timeout-minutes: 170
+        timeout-minutes: 240
         run: |
           # GitHub runs `bash -e` by default; turn it off so a failing render still reaches the scp that
           # pulls results before cleanup destroys the box.
@@ -413,7 +420,7 @@ jobs:
             "$PROJECT_DIR"/scripts/render_test.py "$PROJECT_DIR"/render_suite root@"$HOST":~/ < /dev/null
           T0=$(date +%s)
           # Detached on the box, polled from here: a dropped SSH connection cannot kill a long suite.
-          REMOTE="ssh $SSH_OPTS $T_OPTS -p $PORT root@$HOST" TIER="${TIER:-smoke}" DPH="${DPH:-0}" MAX_S=9600 \
+          REMOTE="ssh $SSH_OPTS $T_OPTS -p $PORT root@$HOST" TIER="${TIER:-smoke}" DPH="${DPH:-0}" MAX_S=13800 \
             bash "$PROJECT_DIR"/scripts/run_remote_suite.sh
           RC=$?
           echo "render suite exit $RC after $(( $(date +%s) - T0 ))s"
