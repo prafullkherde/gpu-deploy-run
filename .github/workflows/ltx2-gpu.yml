@@ -79,7 +79,7 @@ env:
   WEIGHTS_GB: "73"        # GB Wan2GP pulls per fresh box (Qwen-Image 31 + LTX 42), only used to estimate readiness
   RENDER_HOURS: "2"       # render budget used in the cost-per-run ranking
   MAX_READY_MIN: "30"     # reject offers whose ESTIMATED ready time is longer
-  MAX_DPH: "0.60"         # reject offers above this $/hour
+  MAX_DPH: "0.40"         # reject offers above this $/hour
   MAX_DL_COST: "0.004"    # reject hosts charging more per GB downloaded
   WANGP_UPDATE_FIXED: "1" # update Wan2GP on the box (rolls back if it will not start)
   PREDOWNLOAD_FIXED: "0"  # the old 67 GB pre-download was never used by Wan2GP
