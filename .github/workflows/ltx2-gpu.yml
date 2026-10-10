@@ -66,7 +66,7 @@ env:
   RUNS_FILE: ltx2-video-gpu/runs.csv
   NEW_ATTEMPTS: /tmp/attempts_new.csv
   IID_FILE: /tmp/ltx2_iids
-  DISK_GB: "120"
+  DISK_GB: "250"   # lab tier only; standard fits in 120
   TOP_N: "5"
   BOOT_S: "120"
   APP_S: "90"
