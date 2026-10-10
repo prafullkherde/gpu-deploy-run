@@ -23,11 +23,16 @@ def err(msg):
 
 
 try:
-    cases = json.loads(path.read_text())["cases"]
+    manifest = json.loads(path.read_text())
+    cases = manifest["cases"]
 except (OSError, json.JSONDecodeError, KeyError) as e:
     print(f"::error file={path}::cannot read manifest: {e}")
     sys.exit(1)
 
+lim = manifest.get("limits", {})
+MAX_IMAGES, MAX_VIDEOS = lim.get("max_images", MAX_IMAGES), lim.get("max_videos", MAX_VIDEOS)
+MIN_S, MAX_S = float(lim.get("min_s", MIN_S)), float(lim.get("max_s", MAX_S))
+rules_defined = set((manifest.get("base") or {}).get("rules", {}))
 by_name, ids, seconds = {}, set(), {}
 for i, c in enumerate(cases):
     n = c.get("name", f"#{i}")
@@ -65,6 +70,9 @@ for i, c in enumerate(cases):
             seconds[n] = (fl - 1) / FPS
             if (fl - 1) % 8:
                 err(f"{n}: video_length {fl} is not 8n+1 (LTX frame rule)")
+    for r in c.get("rules", []) or []:
+        if r not in rules_defined:
+            err(f"{n}: rule '{r}' is not defined in base.rules")
     for rx in c.get("model_match", []) or []:
         try:
             __import__("re").compile(rx)
@@ -108,5 +116,6 @@ for t, rank in TIERS.items():
             sec = seconds.get(c["name"], 0)
             if rank == TIERS["standard"] and not (MIN_S <= sec <= MAX_S):
                 err(f"{c['name']}: {sec:.1f} s is outside {MIN_S:g}-{MAX_S:g} s")
+print(f"limits: <= {MAX_IMAGES} images, <= {MAX_VIDEOS} videos, {MIN_S:g}-{MAX_S:g} s each (from the file's 'limits')")
 print(f"{len(cases)} cases;", dict(Counter(c.get("mode") for c in cases)))
 sys.exit(1 if errors else 0)
