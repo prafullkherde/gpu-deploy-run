@@ -9,7 +9,7 @@ Reads render_suite/cases.json, runs every case of the chosen TIER (smoke < stand
   index.html     tables + thumbnails + prompts, open it from the downloaded artifact
   <case>.log, <case>_gpu.csv, <case>/settings.json (exactly what ran), <case>/out/*, thumbs/*
 
-Environment: TIER, SUITE_DIR, OUT_DIR, DPH ($/hr, for cost), SUITE_BUDGET_MIN, COLD_BONUS_S,
+Environment: TIER, SUITE_DIR, SUITE_FILE (default cases.json), OUT_DIR, DPH ($/hr, for cost), SUITE_BUDGET_MIN, COLD_BONUS_S,
              KEEP_PARTIALS=1 keeps sliding-window partials, DELIVERY=0 skips the re-encode.
 Stdlib only on purpose: nothing in the rented image can break this script.
 """
@@ -30,6 +30,7 @@ HOME = Path.home()
 TIER_ORDER = {"smoke": 0, "standard": 1, "lab": 2}
 TIER = os.environ.get("TIER", "smoke")
 SUITE_DIR = Path(os.environ.get("SUITE_DIR", HOME / "render_suite"))
+SUITE_FILE = os.environ.get("SUITE_FILE", "cases.json")
 OUT_DIR = Path(os.environ.get("OUT_DIR", HOME / "results"))
 DPH = float(os.environ.get("DPH") or 0)
 BUDGET_MIN = float(os.environ.get("SUITE_BUDGET_MIN") or {"smoke": 40, "standard": 120, "lab": 220}.get(TIER, 120))
@@ -145,7 +146,7 @@ def quality_checks(path, has_audio):
     right size and length that is all black, frozen or silent would pass probe_media."""
     cmd = ["ffmpeg", "-v", "info", "-i", str(path), "-vf", "blackdetect=d=1:pix_th=0.10,freezedetect=n=-60dB:d=2"]
     if has_audio:
-        cmd += ["-af", "silencedetect=n=-50dB:d=1"]
+        cmd += ["-af", "silencedetect=n=-50dB:d=1,ebur128=framelog=quiet"]
     cmd += ["-f", "null", "-"]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -158,6 +159,9 @@ def quality_checks(path, has_audio):
            "frozen_s": total(r"freeze_duration:\s*([\d.]+)")}
     if has_audio:
         out["silent_s"] = total(r"silence_duration:\s*([\d.]+)")
+        lufs = re.findall(r"\bI:\s+(-?[\d.]+)\s+LUFS", p.stderr)
+        if lufs:
+            out["loudness_lufs"] = float(lufs[-1])  # speech/online target is about -16 to -14; below -24 sounds quiet
     return out
 
 
@@ -190,8 +194,8 @@ def make_delivery(src, dst, label=None):
     identifiable even after it is renamed or shared. Measures what the 'high bitrate' output costs us."""
     t0 = time.time()
     base = ["ffmpeg", "-y", "-v", "error", "-i", str(src)]
-    tail = ["-c:v", "libx264", "-crf", "21", "-preset", "medium", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
-            "-movflags", "+faststart", str(dst)]
+    tail = ["-c:v", "libx264", "-crf", "21", "-preset", "medium", "-pix_fmt", "yuv420p", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)]
     attempts = []
     if label:
         safe = re.sub(r"[^A-Za-z0-9_ .-]", "", label)
@@ -212,6 +216,33 @@ def make_delivery(src, dst, label=None):
     size = dst.stat().st_size
     return {"delivery_file": dst.name, "delivery_mb": round(size / 1e6, 1), "delivery_s": round(time.time() - t0, 1),
             "delivery_mbps": round(size * 8 / dur / 1e6, 2) if dur > 1 else None, "delivery_labelled": labelled}
+
+
+def make_qa_image(media, kind, qa_dir, name):
+    """One JPEG per case for review: the image itself, or 4 frames (10/35/65/90 %) at 640 px side by side."""
+    qa_dir.mkdir(parents=True, exist_ok=True)
+    dst = qa_dir / f"{name}.jpg"
+    try:
+        if kind == "image":
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(media), "-vf", "scale='min(1280,iw)':-2", "-frames:v", "1", str(dst)],
+                           capture_output=True, timeout=120)
+        else:
+            dur = max(media_duration(media), 1)
+            frames = []
+            for i, frac in enumerate((0.1, 0.35, 0.65, 0.9)):
+                f = qa_dir / f"_{name}_{i}.jpg"
+                subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{dur * frac:.2f}", "-i", str(media), "-frames:v", "1",
+                                "-vf", "scale=640:-2", str(f)], capture_output=True, timeout=120)
+                if f.exists():
+                    frames.append(f)
+            if frames:
+                subprocess.run(["ffmpeg", "-y", "-v", "error"] + sum([["-i", str(f)] for f in frames], []) +
+                               ["-filter_complex", f"hstack=inputs={len(frames)}", str(dst)], capture_output=True, timeout=120)
+                for f in frames:
+                    f.unlink(missing_ok=True)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    return f"qa/{dst.name}" if dst.exists() else None
 
 
 def make_seam_strip(media, seams, thumbs_dir, name):
@@ -423,6 +454,24 @@ def final_media(media, kind):
     return media[0]
 
 
+def compose(case, base):
+    """Final settings for a case: its own prompt + the manifest's shared base quality text + the per-object rules it lists
+    (e.g. 'sword_scabbard', 'blanket_covers_legs'). Negative prompt is applied to images always, to video only when the
+    case asks (distilled video models run at CFG 1 and ignore it unless NAG is on)."""
+    kind = case["kind"]
+    s = copy.deepcopy(case["settings"])
+    rules = [base.get("rules", {}).get(k, {}) for k in case.get("rules", [])]
+    pos = [s.get("prompt", "")] + ([] if case.get("no_base") else [base.get(f"{kind}_positive", "")]) + [r.get("positive", "") for r in rules]
+    s["prompt"] = " ".join(x.strip() for x in pos if x and x.strip())
+    neg = [base.get(f"{kind}_negative", "")] + [r.get("negative", "") for r in rules] + [s.get("negative_prompt", "")]
+    neg = ", ".join(x.strip().strip(",") for x in neg if x and x.strip())
+    if neg and (kind == "image" or case.get("negative")):
+        s["negative_prompt"] = neg
+    else:
+        s.pop("negative_prompt", None)
+    return s
+
+
 def identity(case):
     """Fields that make every result traceable: ID, concept, mode, and which image a video was made from."""
     return {"id": case.get("id"), "concept": case.get("concept"), "mode": case.get("mode"), "origin": case.get("origin"),
@@ -496,6 +545,8 @@ def run_stitch(case, finals):
     if DELIVERY:
         rec["output"].update(make_delivery(dst, case_dir / "delivery.mp4", label=case["name"][:40]))
     rec["thumb"] = make_thumb(dst, "video", OUT_DIR / "thumbs", name)
+    rec["qa_image"] = make_qa_image(dst, "video", OUT_DIR / "qa", name)
+    rec["checks"] = case.get("checks", [])
     rec["seam_thumb"] = make_seam_strip(dst, seams, OUT_DIR / "thumbs", name)
     (case_dir / f"{name}.txt").write_text(
         f"ID:        {case.get('id')}\nconcept:   {case.get('concept')}\nmode:      stitch of {case['parts']}\nseams at:  {seams} s\n"
@@ -573,6 +624,10 @@ def run_case(case, model_type, settings, timeout_s):
                 rec["output"].update(make_delivery(out / final["file"], case_dir / "delivery.mp4", label=case["name"][:40]))
         rec["thumb"] = make_thumb(out / final["file"], kind, OUT_DIR / "thumbs", name)
         rec["metrics"] = quality_metrics(out / final["file"], kind, final.get("duration_s") or 0)
+        rec["qa_image"] = make_qa_image(out / final["file"], kind, OUT_DIR / "qa", name)
+        rec["checks"] = case.get("_checks", [])
+        rec["prompt_full"] = settings.get("prompt")
+        rec["negative_full"] = settings.get("negative_prompt")
         if status == "SUCCESS" and kind == "video" and rec["warm"] and final["duration_s"] > 1:
             rec["render_s_per_video_s"] = round(elapsed / final["duration_s"], 2)
     if status != "SUCCESS":
@@ -701,7 +756,8 @@ def write_reports(env_snap, suite_elapsed):
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    manifest = json.loads((SUITE_DIR / "cases.json").read_text())
+    manifest = json.loads((SUITE_DIR / SUITE_FILE).read_text())
+    base = manifest.get("base", {})
     cases = [c for c in manifest["cases"] if TIER_ORDER[c["tier"]] <= TIER_ORDER[TIER]]
     catalog = model_catalog()
     env_snap = {
@@ -742,8 +798,9 @@ def main():
         if mt in dead_models:
             skipped(case, f"model {mt} already failed with {dead_models[mt]}")
             continue
-        settings = copy.deepcopy(case["settings"])
+        settings = compose(case, base)
         settings["model_type"] = mt
+        case["_checks"] = [(base.get("rules", {}).get(k) or {}).get("check", k) for k in case.get("rules", [])]
         if case.get("needs"):
             dep = finals.get(case["needs"])
             if not dep:

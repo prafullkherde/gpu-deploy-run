@@ -1,0 +1,443 @@
+{
+ "_readme": "Practical YouTube/Instagram file: 12 videos x 15 s (8 text-to-video, 4 image-to-video from 4 keyframes), original characters, English speech. Select with the suite_file input. The geography map explainer from the notes is not here: a video model cannot draw accurate maps; make it with map tools plus a voice-over.",
+ "limits": {
+  "max_images": 4,
+  "max_videos": 12,
+  "min_s": 15,
+  "max_s": 15
+ },
+ "base": {
+  "image_positive": "Anatomically correct, one head per person, correct number of limbs, two hands with five fingers each, natural proportions, props held and worn the way they are in real life, consistent clothing, sharp focus, high detail, clean crisp edges, well exposed, evenly lit, vivid natural colours.",
+  "image_negative": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, extra limbs, two heads, fused bodies, floating objects, wrong proportions, text artefacts, watermark",
+  "video_positive": "Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Each person has one head and two arms; objects keep their size, shape and colour from the first frame to the last; motion is smooth and physically plausible.",
+  "video_negative": "dark, underexposed, foggy, hazy, blurry, low contrast, washed out, flicker, morphing faces, extra limbs, two heads, objects changing shape, subtitles, watermark",
+  "rules": {
+   "sword_scabbard": {
+    "positive": "The sword is fully sheathed in a scabbard strapped diagonally across the back, only the hilt and crossguard visible above the right shoulder, blade hidden, hilt pointing up (never upside down), nothing sticking up past the shoulder.",
+    "negative": "drawn sword, bare blade, sword held in hand, upside-down hilt, blade sticking out above the shoulder",
+    "check": "Sword is in a scabbard on the back, hilt up above the shoulder, no bare blade."
+   },
+   "bed_covers": {
+    "positive": "A blanket covers the legs and body fully up to the chest, tucked in, both legs hidden under it.",
+    "negative": "uncovered legs, blanket only at the edge, legs sticking out",
+    "check": "Blanket covers the legs."
+   },
+   "animal_anatomy": {
+    "positive": "Real animal anatomy: a dog's head on a dog's body, four legs, paws not hands, normal dog proportions; clothing sits on the dog like a dog costume.",
+    "negative": "dog face on a human body, human hands on a dog, human torso on an animal",
+    "check": "Animals have real animal bodies (no human torso or hands)."
+   },
+   "two_person_dialogue": {
+    "positive": "Two characters stand facing each other at eye level, clearly separate bodies, each with a clear face; the speaker's mouth moves while the listener reacts with small nods and expressions; they speak one after the other, never together.",
+    "negative": "characters looking away from each other, merged bodies, both speaking at once, one face repeated",
+    "check": "Two distinct characters face each other, speak in turns, mouths match the speaker."
+   },
+   "talking_head": {
+    "positive": "One person looks straight into the camera, mouth shapes match the words, natural blinks, hands visible and anatomically correct.",
+    "negative": "mouth not moving, eyes looking away, distorted teeth",
+    "check": "Eyes on camera, lip movement matches speech, hands correct."
+   },
+   "singer_on_beach": {
+    "positive": "She looks straight into the camera with a happy smile and sings with clear, natural mouth movement, bright eyes, relaxed shoulders, hands visible and natural; her full body is visible head to toe at the end of the camera move.",
+    "negative": "eyes looking away, closed mouth while singing, cropped feet, distorted hands, extra fingers",
+    "check": "Eyes on camera, singing mouth motion, full body visible at the end, hands natural."
+   },
+   "physics_light": {
+    "positive": "Physically correct optics: a light ray bends toward the normal when it enters glass and away from it when it leaves; the angles are consistent; white light splits into a red-orange-yellow-green-blue-indigo-violet spectrum through a prism, red bending least; beams are straight lines.",
+    "negative": "curved beams, rays that cross incorrectly, wrong colour order, floating labels, garbled text",
+    "check": "Ray bends toward the normal entering glass and away leaving; spectrum order red to violet; no garbled text."
+   },
+   "object_motion": {
+    "positive": "Every object keeps the same size and colour throughout; moving parts stay attached; motion follows gravity and contact realistically.",
+    "negative": "objects growing or shrinking, parts detaching, objects passing through each other",
+    "check": "Objects keep size and shape; no clipping or morphing."
+   },
+   "clay_style": {
+    "positive": "Hand-made plasticine stop-motion look: visible thumbprints and tiny imperfections in the clay, matte clay surface, slightly stepped stop-motion motion, warm studio lighting, solid-colour clay props with simple shapes.",
+    "negative": "photorealistic, smooth glossy CGI, realistic human skin, digital blur, motion smear",
+    "check": "Looks like clay stop-motion, consistent character design."
+   },
+   "cafe_dialogue": {
+    "positive": "Two adults sit across from each other at a small café table, bodies turned toward each other, clear faces and hands; one speaks while the other listens, nods, then replies.",
+    "negative": "both speaking at once, looking at the camera, merged faces, extra hands",
+    "check": "Two people face each other, take turns speaking, mouths match speech."
+   },
+   "product_shot": {
+    "positive": "A single product with a stable shape and logo-free surface, clean seamless backdrop, controlled lighting, smooth camera orbit.",
+    "negative": "warping product, text on the product, extra parts",
+    "check": "Product keeps its shape; no morphing."
+   },
+   "nature_doc": {
+    "positive": "Natural light, true colours, slow stable camera, sharp foreground and background.",
+    "negative": "oversaturated, cartoon, shaky camera",
+    "check": "Natural colours, stable camera."
+   }
+  }
+ },
+ "cases": [
+  {
+   "id": "PI01",
+   "name": "PI01_clay_pair_keyframe",
+   "concept": "P01 Clay dialogue",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 900,
+   "note": "Keyframe for P01 (two original clay characters, facing each other).",
+   "rules": [
+    "clay_style",
+    "two_person_dialogue"
+   ],
+   "settings": {
+    "model_type": "qwen_image_20B",
+    "prompt": "Plasticine stop-motion style two-shot in a cosy clay lighthouse kitchen: on the left a tall lanky clay lighthouse keeper with a drooping ginger moustache, round wire glasses and an oversized yellow raincoat; on the right a short round clay terrier dog standing upright on two legs in a knitted green hat and a tiny red scarf. They face each other at eye level, both with big round eyes and expressive mouths. Warm lamp light, wooden table with a teapot, a porthole window, bright and clear.",
+    "resolution": "1664x928",
+    "seed": 42,
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   }
+  },
+  {
+   "id": "PI02",
+   "name": "PI02_beach_model_keyframe",
+   "concept": "P07 Beach singer",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 900,
+   "note": "Keyframe for P07.",
+   "rules": [
+    "singer_on_beach"
+   ],
+   "settings": {
+    "model_type": "qwen_image_20B",
+    "prompt": "Photorealistic cinematic vertical photo of a stunning adult fashion model, long highlighted brown hair in a sea breeze, radiant happy smile, eyes looking straight into the camera, fit athletic figure, dark red bikini top, white beach shirt tied at the waist, white shorts, barefoot on damp sand at the edge of a wide Pacific beach, seen from a distance head to toe, small in the frame; white foamy waves, bright diffused daylight, crisp detail, tasteful and elegant.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   }
+  },
+  {
+   "id": "PI03",
+   "name": "PI03_presenter_keyframe",
+   "concept": "P08 Presenter",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 900,
+   "note": "Keyframe for P08.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "model_type": "qwen_image_20B",
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman presenter, glowing skin, long softly styled hair, elegant natural makeup, wearing a stylish ivory blazer over a silk emerald top and delicate gold jewellery, in a brightly lit modern studio, strong soft key light, tidy shelf behind her in focus, looking straight into the camera with a warm smile, hands on the desk.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   }
+  },
+  {
+   "id": "PI04",
+   "name": "PI04_cafe_pair_keyframe",
+   "concept": "P09 Café conversation",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "smoke",
+   "origin": "practical",
+   "timeout_s": 900,
+   "note": "Keyframe for P09.",
+   "rules": [
+    "cafe_dialogue"
+   ],
+   "settings": {
+    "model_type": "qwen_image_20B",
+    "prompt": "Photorealistic cinematic photo of two adults at a small café table by a bright window: a man in his thirties with short dark hair, stubble and a navy sweater, and a woman in her thirties with shoulder-length auburn hair and a cream cardigan, turned toward each other, coffee cups between them, warm natural daylight, sharp faces, relaxed friendly expressions, shallow background of a tidy café.",
+    "resolution": "1664x928",
+    "seed": 42,
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   }
+  },
+  {
+   "id": "P01",
+   "name": "P01_clay_dialogue",
+   "concept": "P01 Clay dialogue",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "TALKING TO EACH OTHER (two characters, clay, i2v from PI01).",
+   "rules": [
+    "clay_style",
+    "two_person_dialogue"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "The tall lighthouse keeper and the little terrier talk to each other in the cosy kitchen. The keeper leans down and says in a slow deadpan English voice: \"The tide is late again.\" The terrier tilts its head, then answers in a quick high voice: \"Then we make more tea!\" The keeper blinks twice, sighs, and pours the tea; the terrier bounces happily. Slightly stepped stop-motion movement, gentle camera push-in. Audio: both voices clear, taking turns, a ticking clock, a kettle, a soft ukulele.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "PI01_clay_pair_keyframe"
+  },
+  {
+   "id": "P02",
+   "name": "P02_clay_superhero",
+   "concept": "P02 Clay superhero",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V stylised clay character; squash-and-stretch.",
+   "rules": [
+    "clay_style",
+    "object_motion"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "Stylised 3D clay character animation, quirky indie cartoon look. A lanky superhero with an exaggerated oblong head, a big black curly moustache and slicked-back hair, in a tight teal suit with a yellow lightning emblem, brown boots and a short dark cape, stands in a minimal studio with a muted olive-green gradient background and a warm spotlight. Low-angle hero shot from behind, he turns, puts his hands on his hips with a proud deadpan face, then attempts a dramatic leap with squash-and-stretch timing and lands awkwardly. Snappy comedic timing. Audio: a heroic brass sting, a comic boing, a soft thud.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "P03",
+   "name": "P03_canoe_procedure",
+   "concept": "P03 Procedural explainer",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V procedural objects-and-motion example.",
+   "rules": [
+    "object_motion"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "Clean educational 3D animation on a seamless sky-blue studio backdrop, soft top-down studio light. A stylised man in a dark grey t-shirt works on a raw log: he peels back the rough bark in one satisfying piece, then swings a metal adze to scoop pale fresh wood chips out of the log, then pours hot water into the hollow so steam rises and the hull gently widens. The log keeps the same size, the hollow deepens step by step, tools stay in his hands. Snappy, satisfying, procedural movement. Audio: bark peeling, wood chips, a soft steam hiss, light upbeat music.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "P04",
+   "name": "P04_light_refraction",
+   "concept": "P04 Physics explainer",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V physics explainer (optics must be correct).",
+   "rules": [
+    "physics_light",
+    "object_motion"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "A clean 3D educational animation in a modern science lab on a smooth wooden desk: a rectangular glass slab and a triangular prism, a thin bright laser beam, dashed white normal lines. A friendly light-bulb teacher with round glasses points as the beam enters the slab, bends toward the normal, and bends away on exit; then the beam enters the prism and fans into a spectrum, red bending least and violet most. Smooth camera pans, macro detail, softly blurred background, no text. Audio: the teacher says in clear English: \"Glass slows light down, so it bends. A prism splits white light into colours.\" Gentle music.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "P05",
+   "name": "P05_alpine_lake",
+   "concept": "P05 Nature documentary",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V landscape with a timeline.",
+   "rules": [
+    "nature_doc"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "Photorealistic cinematic nature documentary in 15 seconds. 0-5 s: a slow forward aerial drone shot approaches a turquoise glacier-fed alpine lake ringed by snow-capped peaks and dark pine forest, golden-hour sunlight breaking through low clouds. 5-10 s: the camera glides just above the glass-like water, razor-sharp reflections of pines and jagged cliffs, gentle ripples. 10-15 s: a smooth upward tilt as the camera rises above the treeline to reveal wilderness stretching to the horizon. Stable camera, true colours, wide-angle 16 mm look. Audio: wind, distant water, a swelling orchestral bed.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "P06",
+   "name": "P06_oregon_coast_walk",
+   "concept": "P06 Coast walk",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V adult walking on a beach (no singing).",
+   "rules": [
+    "nature_doc"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "Cinematic slow-motion travel reel on the Oregon coast under a soft overcast sky: a fit adult woman seen from behind with long highlighted brown hair moving in the sea breeze, a light white beach shirt fluttering at her waist, white shorts, walking barefoot along the dark wet sand at the water's edge, foamy waves washing in. A smooth tracking shot behind her, then a low angle on her feet in the shallow receding surf, rising to follow her down the long misty coastline. Natural cool coastal light, muted tones, 85 mm look. Audio: waves, wind, a soft ambient pad.",
+    "resolution": "704x1280",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "P07",
+   "name": "P07_beach_model_sings",
+   "concept": "P07 Beach singer",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "I2V singer; original lyrics (the named song's lyrics are copyrighted and not reproduced).",
+   "rules": [
+    "singer_on_beach"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "She walks barefoot toward the camera along the wet sand at the water's edge, small in a wide establishing shot. The camera zooms in slowly until her whole body is framed head to toe, then settles. She looks straight into the camera, smiling happily, and sings in a clear warm pop voice (original lyrics): \"Barefoot in the sunshine, nothing left to buy, love is in the laughter, underneath this open sky.\" Her hair and the beach shirt move in the breeze. Audio: her singing voice in front, soft waves, light acoustic guitar.",
+    "resolution": "704x1280",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "PI02_beach_model_keyframe"
+  },
+  {
+   "id": "P08",
+   "name": "P08_presenter_english",
+   "concept": "P08 Presenter",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "I2V talking presenter (English).",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "The presenter speaks directly to the camera in an energetic, friendly tone. She says in clear English: \"Three things make a great short video. A strong hook in the first second. One clear idea. And a call to action at the end.\" Natural lip sync, small head nods, two quick hand gestures, blinks, breathing. Static camera with a slight push-in. Audio: her clear loud voice, a light upbeat music bed.",
+    "resolution": "704x1280",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "PI03_presenter_keyframe"
+  },
+  {
+   "id": "P09",
+   "name": "P09_cafe_conversation",
+   "concept": "P09 Café conversation",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "smoke",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "TALKING TO EACH OTHER (two real-looking adults, i2v from PI04).",
+   "rules": [
+    "cafe_dialogue"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "The man and the woman talk to each other at the café table, turned toward each other. The man says in a relaxed English voice: \"Did you finish the report?\" The woman smiles and replies: \"Last night. It only needed one more chart.\" The man laughs and nods, the woman sips her coffee. Natural small gestures, soft steady camera, warm daylight. Audio: both voices clear and in turn, café ambience, a faint espresso machine.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "PI04_cafe_pair_keyframe"
+  },
+  {
+   "id": "P10",
+   "name": "P10_sneaker_commercial",
+   "concept": "P10 Product ad",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V product shot.",
+   "rules": [
+    "product_shot"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "Premium product commercial. A white-and-orange running sneaker rotates slowly clockwise on a matte grey circular pedestal against a seamless soft gradient backdrop. A single soft key light sweeps left to right, creating a moving highlight on the mesh upper and a crisp reflection on the glossy floor. The camera performs a smooth low-angle orbit, glides in to a macro of the stitching, then pulls back. The sneaker keeps the same shape and colours. Audio: a subtle rising synth whoosh and a clean bass pulse.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "P11",
+   "name": "P11_neon_rain_street",
+   "concept": "P11 City night",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V reflections and several moving subjects.",
+   "rules": [
+    "object_motion"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "Cinematic night street in a rain-soaked Asian city, pink and cyan neon signs reflecting on wet asphalt, bright enough to see every detail. A yellow taxi drives slowly toward the camera with wipers moving; a pedestrian with a clear umbrella crosses left to right. Steady dolly-back, rain streaks catching the neon light, puddles rippling. Audio: steady rain, tyres splashing, distant traffic.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "P12",
+   "name": "P12_pan_cooking",
+   "concept": "P12 Cooking close-up",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "practical",
+   "timeout_s": 1500,
+   "note": "T2V hands, liquids, steam, food.",
+   "rules": [
+    "object_motion"
+   ],
+   "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "prompt": "Close-up cooking shot in warm kitchen light: a cast-iron pan on a gas flame, a chef's hand tosses sliced garlic and cherry tomatoes into hot olive oil; they sizzle and steam rises. A low 45-degree angle, slow motion at the toss, then normal speed. Hands are anatomically correct, the pan and food keep their shape. Audio: a crisp sizzle, a spatula tapping the pan, quiet kitchen ambience.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "num_inference_steps": 8
+   }
+  }
+ ]
+}

@@ -29,7 +29,8 @@ ltx2-video-gpu/
 ├── runs.csv                            money + outcome, one row per run (auto-written)
 ├── render_runs/<ts>_m<machine>.json    render summary per run (auto-written)
 ├── render_suite/
-│   └── cases.json                      THE test manifest: standard = 5 images + 5 videos (V10 = 3 clips stitched); lab = single-variable sweeps
+│   ├── cases.json                      main test file: smoke / standard (4 images + 5 videos) / lab (quality sweeps)
+│   └── cases-pratical-utube.json       practical file: 12 videos x 15 s (8 text-to-video, 4 image-to-video), talking characters
 └── scripts/
     ├── pick_offers.py                  runner: rank live offers, learn from attempts.csv
     ├── probe_bandwidth.sh              box: real throughput to Hugging Face
@@ -39,7 +40,8 @@ ltx2-video-gpu/
     ├── start.sh                        box: start Wan2GP on :7860
     ├── render_test.py                  box: run the suite, collect stats, thumbnails, report
     ├── run_remote_suite.sh             runner: start render_test.py detached on the box, stream its output
-    ├── lint_suite.py                   runner: free check of cases.json before any GPU is rented
+    ├── lint_suite.py                   runner: free check of the chosen suite file before any GPU is rented
+    ├── qa_review.py                    runner: OPTIONAL vision-model review of every result against its checklist
     └── log_attempt.py                  runner: write attempts.csv + runs.csv
 ```
 
@@ -66,25 +68,29 @@ Append attempts.csv + runs.csv, commit render_runs/*.json  (always runs)
 Design rule: the runner is the control plane, the box is disposable, and everything worth keeping is
 pulled back **before** destroy.
 
-## 3. Inputs (all have defaults; for a normal run only choose `action`)
+## 3. Inputs (short list; everything else is fixed and printed in the run log)
 
 | Input | Default | Meaning |
 |---|---|---|
-| action | search | `search` ranks only (free). `run` does everything. `destroy_all` kills all instances |
-| gpu_names | 4090,5090,3090,A100 | candidate GPUs; ranking picks among them |
-| max_ready_min | 30 | wide pre-filter on the ESTIMATED ready time. Estimates are rough; the real gates are the 5 min boot timeout and the probe |
-| min_real_mbps | 800 | bar for the on-box probe. `auto` derives it from max_ready_min |
-| max_dph | 0.60 | $/hr ceiling incl. disk |
-| render_test | false | run the render suite after HTTP 200 |
-| suite_tier | smoke | `smoke` 2 cases, `standard` 5 images + 5 videos (12 generations + 1 stitch), `lab` = standard + quality sweeps (see 11f, 11g) |
-| wan2gp_update | false | update Wan2GP on the box to the latest `main` before starting; rolls back if it will not start (needed for the newer models in `lab`) |
-| predownload | false | also pre-download the old 67 GB set (never used by Wan2GP) |
-| hold_min | 0 | keep box up N min for manual use (the render test stops the UI, so use one or the other) |
-| wan2gp_image | pinned tag | change only deliberately |
+| action | run | `run` = rent, render the suite, always destroy. `search` = rank only (free). `destroy_all` |
+| suite_file | cases.json | any file in `render_suite/` (`cases.json`, `cases-pratical-utube.json`) |
+| suite_tier | standard | `smoke` 2 cases, `standard` the whole file, `lab` quality sweeps (`cases.json`) |
+| min_real_mbps | 600 | probe bar, measured on the box against Hugging Face |
+| gpu_names | 4090,5090,3090,A100 | GPUs to consider |
+| ui_first_min | 0 | minutes the web UI stays usable before the suite starts (the suite stops the UI to free VRAM) |
+| hold_min | 0 | minutes to keep the box after the suite (UI restarted) |
+| wan2gp_image | pinned tag | change only on purpose |
+| fixed_settings | read-only | a one-option list that shows the fixed values below |
 
-The **model is not an input**: it comes from `model_type` inside each case of `render_suite/cases.json`.
-The workflow runs on manual dispatch only. A cron `schedule` event carries no inputs, so every
-`if: inputs.action == ...` step would be skipped; scheduling needs a fallback-to-defaults change.
+**Fixed in the YAML** (printed by the "Settings in effect" step in the log and the run Summary): max estimated ready time 30 min,
+max price $0.60/h, max download price $0.004/GB, about 73 GB pulled per box, render budget 2 h, Wan2GP auto-update ON (rolls back if
+it will not start), old pre-download OFF. The render suite always runs on `action=run`.
+
+The web UI URL is printed in the log at HTTP 200 (a `::notice` and a banner). The suite stops the UI when it starts (VRAM); use
+`ui_first_min` for a window before it, `hold_min` for one after.
+
+The **model is not an input**: it comes from `model_type` inside each case. A cron `schedule` event carries no inputs, so scheduling
+would need defaults-fallback changes.
 
 ## 4. Where every piece of state lives
 
@@ -431,44 +437,116 @@ and by eye.
 The Prompt Enhancer you saw in the UI (a Qwen3.x GGUF language model, several GB) rewrites short prompts into detailed ones. It
 downloads on first use, so the 5 min hold is too short: use `hold_min` 30 or more if you want to try it.
 
-## 11h. The suite now
+## 11h. The suites now
 
-**`standard` = 5 images + 5 videos**, rewritten with the fixes above: `I01`/`V01` Ghibli traveler, `I05`/`V05` father braids hair,
-`I06`/`V06` dogs in a taxi, `I08`/`V08` AI avatar (15 s speech), `I10` + `V10` kids' blood story (3 clips x 5 s stitched to 15 s).
-Dropped from standard (still available as ideas): baby lawyer, Ganesha, sneaker, neon street, waterfall, portrait, infographic.
+**English only.** All speech and singing in the videos is English (a Hindi variant was dropped; it can be added as one more case).
+No children and no blood in the suites. The notes' studio and character names are not used: the clay, cartoon and presenter characters are original.
 
-**The blood story (`V10`)** is an explainer built from one image: clip 1 shows the architecture (plasma carrying red cells, white
-cells and platelets), clip 2 red cells and what fails without them (no oxygen, no energy), clip 3 white cells, platelets and plasma and what fails
-without each (infection, bleeding, nothing flows). 15 s fits plasma plus all three cell types with one failure line each; anything deeper
-would need more clips. The narration is simplified general knowledge: have a teacher or doctor check it before publishing, and
-check what the model actually drew (a cartoon cell can be wrong).
+### `cases.json` (main file)
+| ID | mode | size | what it is |
+|---|---|---|---|
+| `I01` | t2i | 1664x928 | Keyframe for V01. Rule sword_scabbard fixes the sword above the shoulder / upside-down hilt. |
+| `I06` | t2i | 1664x928 | Keyframe for V06. Rule animal_anatomy keeps dogs as dogs. |
+| `I08` | t2i | 928x1664 | smoke, THE PRESENTER. Fashion-model look, adult, bright studio. Member of the 'presenter image' sweep. |
+| `I20` | t2i | 928x1664 | Keyframe for V20 (wide start; the video zooms in). |
+| `V01` | i2v | 10 s, 1280x704 | Image-to-video from I01. |
+| `V06` | i2v | 10 s, 1280x704 | Image-to-video from I06. |
+| `V08` | i2v | 15 s, 704x1280 | smoke, THE PRESENTER: image-to-video from I08, 15 s of English speech. Listen for lip sync and clarity. |
+| `V20` | i2v | 15 s, 704x1280 | THE SINGER: image-to-video from I20. Camera: wide, slow zoom-in to full body. LYRICS ARE ORIGINAL (the requested song's lyrics are copyrighted and are not reproduced); replace with your own or licensed text. |
+| `V30` | t2v | 15 s, 1280x704 | THE OBJECTS-AND-MOTION EXAMPLE (replaces the blood story): text-to-video; checks optics and proportions. |
 
-**`lab` = standard + sweeps** (one change per case, same prompt and seed), ranked in `report.md` by detail and brightness:
+`lab` adds sweeps (same prompt and seed, one change each), ranked by detail and brightness in `report.md`:
 
-| case | tier | model | settings | what it tests |
-|---|---|---|---|---|
-| `L01` | lab | qwen_image_20B | 928x1664, 4 steps | OLD config (4 steps, no guidance, no negative prompt) = what produced the poor images. Control. |
-| `L02` | lab | qwen_image_20B | 928x1664, model-default steps | Only model, prompt, size, seed: shows what Wan2GP's own defaults for this model give. |
-| `L03` | lab | qwen_image_20B | 928x1664, 50 steps, CFG 4 | Official Qwen-Image recipe: 50 steps, CFG 4, negative prompt. |
-| `L04` | lab | match: Qwen.*Image.*2\.1 | 928x1664, model-default steps | Qwen Image 2.1 (newer; vendor recipe is 40 steps, CFG off). Model's own defaults. SKIPPED if the box's Wan2GP is too old. |
-| `L05` | lab | match: Krea ?2 | 928x1664, model-default steps | Krea 2 ('most aesthetic open image model' per Wan2GP). Model defaults. SKIPPED if absent. |
-| `L06` | lab | match: Z.?Image.*Turbo | 928x1664, model-default steps | Z-Image Turbo (8 steps, fast). Model defaults. |
-| `L07` | lab | match: Klein.*9B | 928x1664, model-default steps | Flux 2 Klein 9B. Model defaults. |
-| `L10` | lab | ltx2_22B_distilled | 1280x704, 10 s, 8 steps | Single high-res phase instead of 2 phases (changelog: slower, more VRAM, 'potentially higher quality'). Key guidance_phases=1 is UNVERIFIED; results.phases_seen shows whether it took effect. |
-| `L11` | lab | match: Distilled 1\.1 | 1280x704, 10 s, 8 steps | LTX-2.3 Distilled 1.1 ('better audio and visuals' per changelog). SKIPPED if not on the box. |
-| `L12` | lab | match: LTX-?\s?2\.5.*Distilled | 1280x704, 10 s, 8 steps | LTX 2.5 (upstream model list). SKIPPED if the box's Wan2GP is too old. |
-| `L13` | lab | match: LTX.*\bDev\b | 1280x704, 10 s, model-default steps | LTX-2.3 Dev with the model's own defaults (slower, non-distilled). |
-| `L14` | lab | ltx2_22B_distilled | 1920x1088, 10 s, 8 steps | Same as V01 at 1920x1088 (LTX 'shines' at 720p/1080p). |
-| `L15` | lab | ltx2_22B_distilled | 1280x704, 10 s, 8 steps | Negative prompt + NAG for the distilled model (changelog: NAG lets distilled use a negative prompt). Key NAG_scale is UNVERIFIED. |
-| `L16` | lab | ltx2_22B_distilled | 1280x704, 10 s, 8 steps | Text-to-video with the rewritten bright prompt (the old one asked for 'mist drifting through shafts of sunlight', i.e. haze). |
+| ID | model | steps | what it tests |
+|---|---|---|---|
+| `L01` | qwen_image_20B | 4 | Old config (4 steps, CFG default): the control that produced the poor images. |
+| `L02` | qwen_image_20B | model default | Only model, prompt, size, seed: Wan2GP's own defaults. |
+| `L03` | qwen_image_20B | 50 | Official Qwen-Image recipe: 50 steps, CFG 4. |
+| `L05` | krea2_turbo | model default | Krea 2 Turbo (8 steps). |
+| `L06` | krea2_raw | model default | Krea 2 RAW. |
+| `L07` | flux2_klein_9b | model default | Flux 2 Klein 9B. |
+| `L08` | Qwen.*Image.*2\.1 | model default | Qwen Image 2.1 if the box has it (matched by name). |
+| `L11` | ltx2_22B_distilled_1_1 | 8 | LTX-2.3 Distilled 1.1. |
+| `L12` | ltx2_25_22B_distilled | 8 | LTX-2.5 Distilled. |
+| `L13` | ltx2_22B_1_1 | model default | LTX-2.3 Dev 1.1 with its own defaults (slower). |
+| `L14` | ltx2_25_22B | model default | LTX-2.5 Dev with its own defaults. |
+| `L15` | ltx2_22B_distilled | 8 | Single high-res phase; key guidance_phases=1 UNVERIFIED (phases_seen shows if it took effect). |
+| `L16` | ltx2_22B_distilled | 8 | 1920x1088. |
+| `L17` | ltx2_22B_distilled | 8 | Text-to-video baseline for comparing against the image-to-video cases. |
 
-Heuristic flags in the report: `DARK` (mean brightness under 70 of 255) and `LOW_CONTRAST` (10th to 90th percentile spread under 60). They are
-cheap alarms, not verdicts: the reference SDXL image itself has a modest spread of 108 and mean brightness 130.
+### `cases-pratical-utube.json` (practical file): 12 videos x 15 s
+| ID | mode | size | what it is |
+|---|---|---|---|
+| `PI01` | t2i | 1664x928 | Keyframe for P01 (two original clay characters, facing each other). |
+| `PI02` | t2i | 928x1664 | Keyframe for P07. |
+| `PI03` | t2i | 928x1664 | Keyframe for P08. |
+| `PI04` | t2i | 1664x928 | smoke, Keyframe for P09. |
+| `P01` | i2v | 15 s, 1280x704 | TALKING TO EACH OTHER (two characters, clay, i2v from PI01). |
+| `P02` | t2v | 15 s, 1280x704 | T2V stylised clay character; squash-and-stretch. |
+| `P03` | t2v | 15 s, 1280x704 | T2V procedural objects-and-motion example. |
+| `P04` | t2v | 15 s, 1280x704 | T2V physics explainer (optics must be correct). |
+| `P05` | t2v | 15 s, 1280x704 | T2V landscape with a timeline. |
+| `P06` | t2v | 15 s, 704x1280 | T2V adult walking on a beach (no singing). |
+| `P07` | i2v | 15 s, 704x1280 | I2V singer; original lyrics (the named song's lyrics are copyrighted and not reproduced). |
+| `P08` | i2v | 15 s, 704x1280 | I2V talking presenter (English). |
+| `P09` | i2v | 15 s, 1280x704 | smoke, TALKING TO EACH OTHER (two real-looking adults, i2v from PI04). |
+| `P10` | t2v | 15 s, 1280x704 | T2V product shot. |
+| `P11` | t2v | 15 s, 1280x704 | T2V reflections and several moving subjects. |
+| `P12` | t2v | 15 s, 1280x704 | T2V hands, liquids, steam, food. |
 
-### Procedure
-1. Run `suite_tier=lab`, `wan2gp_update=true`. Open `report.md` (run Summary) and `index.html` (artifact); compare the two sweep tables side by side.
-2. Pick the winners (model + steps + guidance for images; model + phases for video). Put them in the `standard` cases of `cases.json`, rerun `standard`.
-3. If every image is still poor, the blocker is the model family, not the settings; use `L05`/`L06`/`L07` winners or move image generation to an API and keep Wan2GP for video only.
+The geography map explainer from the notes is not included: a video model cannot draw accurate maps; make it with map tools plus a voice-over.
+
+### The base prompt and the per-object rules (fixes for the common mistakes)
+Every prompt is composed at run time: the case's own text + the file's `base` quality text + the text of each rule the case lists.
+Images always get the negative prompt; video gets it only when a case sets `"negative": true` (distilled LTX runs at CFG 1 and ignores it
+unless NAG is on). The full composed prompt is in each `<ID>.txt` and in `results.json`.
+
+| rule | what the QA reviewer checks |
+|---|---|
+| `sword_scabbard` | Sword is in a scabbard on the back, hilt up above the shoulder, no bare blade. |
+| `bed_covers` | Blanket covers the legs. |
+| `animal_anatomy` | Animals have real animal bodies (no human torso or hands). |
+| `two_person_dialogue` | Two distinct characters face each other, speak in turns, mouths match the speaker. |
+| `talking_head` | Eyes on camera, lip movement matches speech, hands correct. |
+| `singer_on_beach` | Eyes on camera, singing mouth motion, full body visible at the end, hands natural. |
+| `physics_light` | Ray bends toward the normal entering glass and away leaving; spectrum order red to violet; no garbled text. |
+| `object_motion` | Objects keep size and shape; no clipping or morphing. |
+(`cases-pratical-utube.json` adds `clay_style`, `cafe_dialogue`, `product_shot`, `nature_doc`.)
+
+### Checking for mistakes: four layers
+1. **Prompt side**: base text + rules + negative prompt (above).
+2. **Numbers**: brightness, contrast, detail, black / frozen / silent seconds, loudness in LUFS (target about -16; below -24 sounds quiet). The delivery copy is loudness-normalised to -16 LUFS.
+3. **Vision model (optional)**: `qa_review.py` sends each case's review image (the picture, or 4 frames of the video) and its checklist to a vision model
+   and writes `qa_review.md` into the run Summary. Add the repository secret `LTX2_GPU_ANTHROPIC_API_KEY` to enable it; without it the step prints a notice and skips. It catches two heads, a drawn sword,
+   uncovered legs, merged characters, garbled text, wrong optics. It cannot hear audio or see motion between its 4 frames.
+4. **You**: audio, lip sync, and motion (a second head appearing for a few frames).
+
+## 11i. Run 4 (RTX 4090 24 GB, standard tier of the previous manifest, 13/13): rates and what mattered
+
+| Task | Warm time (average) | Cold first use |
+|---|---|---|
+| Image, 1664x928 or 928x1664, Qwen-Image 20B, 30 steps, CFG 4 | **60.8 s** (59.8 to 61.5, n=4); was 30 s at 4 steps | 357 s (+30.7 GB download) |
+| Video 5 s clip | 60.5 s (12.1 s per video-second) | |
+| Video 10 s | 89.9 s (9.0 s per video-second) | |
+| Video 12 s | 105.2 s (8.8 s per video-second) | |
+| Video 15 s, 704x1280 | 126.6 s (8.4 s per video-second) | 484 s for the first video (+42.1 GB) |
+
+Suite 27.3 min and about $0.22 of GPU time; the whole job (rent, deploy, update, suite, hold, cleanup) cost $0.52. The 4090 is as fast as the 5090 here
+because Wan2GP runs heavily offloaded (VRAM peak 1.6 to 3 GB of 24 GB).
+
+**What changed to get acceptable quality (in order of importance):** (1) Qwen-Image sampling: 4 steps with no guidance became 30 steps, CFG 4 and a
+negative prompt; (2) prompts rewritten to ask for bright, crisp, evenly lit scenes (the old ones asked for dark studios, haze and backlight); (3) image-to-video from the better
+start frames. The Wan2GP update ran, but the same models were used (Qwen Image 20B, LTX Distilled 1.0), so it was not the cause.
+
+**`negative_prompt` and CFG** matter for Qwen-Image (true CFG: the negative prompt is the "do not" branch; Wan2GP's changelog says Qwen was "dying for a negative prompt").
+They do not matter for the distilled LTX video model (CFG 1), which ignores the negative prompt unless NAG is enabled. So: always on for images, off by default for video, on for the Dev models.
+
+**Prompt Enhancer:** not used. It is built into Wan2GP (a local Qwen language model, several GB, downloaded to the box; `enhancer_enabled` and `prompt_enhancer_quantization` appear in the box's config), but our settings never request it
+and the log shows no enhancer model loading. We author long structured prompts instead (case text + base + rules).
+
+**Other settings found in the box's `wgp_config`** (printed in the log; none changed yet): `transformer_quantization` int8 and `text_encoder_quantization` int8 (a possible small quality cost);
+`profile` 4 (low-VRAM mode: speed, not quality); `image_output_codec` jpeg_95 (lossy: use PNG in the UI Config tab when judging detail);
+`video_output_codec` libx264_8 (8-bit H.264; a 10-bit option may reduce banding); `audio_output_codec` aac_128. Quiet sound is a level problem, not a codec one: loudness is now measured and the delivery copy normalised.
 
 ## 12. UNVERIFIED (do not rely on these until the first real run confirms them)
 
@@ -517,41 +595,32 @@ cheap alarms, not verdicts: the reference SDXL image itself has a modest spread 
 | 41 | Newer Wan2GP needs a newer torch/CUDA than the image's 2.7.1/cu128 | unknown (upstream recommends torch 2.10/cu130) | the `UPDATE:` startup check |
 | 42 | Model names in the lab (Qwen Image 2.1, Krea 2, Z-Image Turbo, Flux 2 Klein 9B, Distilled 1.1, LTX 2.5) match by name regex | medium | `MODELS:` line in the log lists what exists; unmatched cases are SKIPPED with a hint |
 | 43 | Quality improvement from the rewritten prompts alone | medium-high | `I01` vs old run; `L16` vs old waterfall |
+| 45 | The vision-model review (qa_review.py) works against the real API with model `claude-sonnet-5-5`; tested only against a local mock | medium | a run with the secret set |
+| 46 | LTX produces two-character dialogue with correct turn-taking and lip sync (`P01`, `P09`) | low | listen |
+| 47 | Singing with clear lyrics and a slow zoom-in from wide to full body (`V20`, `P07`) | low | watch and listen; lyrics are original (the named song's lyrics are copyrighted and not reproduced) |
+| 48 | `loudnorm` to -16 LUFS makes the delivery copy sound right | high (standard EBU R128 filter) | listen |
+| 49 | Changing `image_output_codec` / `video_output_codec` in the UI config improves detail | medium | the UI Config tab; the key values then show in `env.wgp_config` |
 | 44 | The blood-biology narration is accurate and what the model draws matches it | low | a teacher or doctor's review; the clips |
 
 ## 13. Files to add or edit (one checklist)
 
-Copy these into the repo, commit to the branch you dispatch the workflow from.
+Copy into the repo and commit to the branch you dispatch from. Do not copy `attempts.csv` (your live file is migrated in place).
 
-| Path | Action | What it is |
-|---|---|---|
-| `.github/workflows/ltx2-gpu.yml` | **EDIT (replace)** | adds `render_test` and `predownload` inputs, credit before/after, pull-logs, artifact upload, `log_attempt.py` call, lint step, hold restarts the app; `weights_gb` 73, `min_real_mbps` 800, `max_ready_min` 30 |
-| `ltx2-video-gpu/scripts/pick_offers.py` | **EDIT (replace)** | adds proven-host ranking and the proven count in the summary |
-| `README.md` | **EDIT (replace)** | one-line pointer to this file |
-| `ltx2-video-gpu/ltx2-video-gpu-readme.md` | **ADD** | this file |
-| `ltx2-video-gpu/scripts/render_test.py` | **ADD / replace** | the suite runner (tiers, thumbnails, delivery re-encode, reports, failure policy) |
-| `ltx2-video-gpu/scripts/run_remote_suite.sh` | **ADD** | starts the suite detached on the box and streams its output |
-| `ltx2-video-gpu/scripts/lint_suite.py` | **ADD / replace** | enforces 5 + 5, 10 to 15 s, IDs, stitch parts, regexes before renting |
-| `ltx2-video-gpu/scripts/log_attempt.py` | **ADD / replace** | writes `attempts.csv` + `runs.csv`; heals duplicated files; stores the render root cause in `fail_note` |
-| `ltx2-video-gpu/scripts/bootstrap.sh` | **EDIT (replace)** | pre-download off by default; optional `WANGP_UPDATE` with rollback; idempotent Triton workaround |
-| `ltx2-video-gpu/render_suite/cases.json` | **ADD / replace** | standard 5+5 with tuned prompts and sampling, blood story, lab sweeps |
-| `ltx2-video-gpu/render_settings/` | **DELETE** | replaced by `render_suite/`; the old 3 JSON files are cases `img_01`, `vid_01`, `vid_02` now |
+| Path | Action |
+|---|---|
+| `.github/workflows/ltx2-gpu.yml` | **replace** (short inputs, fixed settings, UI URL at HTTP 200, suite file input, QA step) |
+| `ltx2-video-gpu/scripts/render_test.py` | **replace** |
+| `ltx2-video-gpu/scripts/bootstrap.sh` | **replace** |
+| `ltx2-video-gpu/scripts/run_remote_suite.sh` | **replace** |
+| `ltx2-video-gpu/scripts/lint_suite.py` | **replace** |
+| `ltx2-video-gpu/scripts/log_attempt.py` | **replace** |
+| `ltx2-video-gpu/scripts/pick_offers.py` | **replace** |
+| `ltx2-video-gpu/scripts/qa_review.py` | **add** |
+| `ltx2-video-gpu/render_suite/cases.json` | **replace** |
+| `ltx2-video-gpu/render_suite/cases-pratical-utube.json` | **add** |
+| `ltx2-video-gpu/ltx2-video-gpu-readme.md`, `README.md` | **replace** |
 
-Do **not** overwrite your live `ltx2-video-gpu/attempts.csv` with the copy in the download: it is an
-unchanged snapshot of the zip, and the workflow migrates your real file in place on the next run.
+Unchanged: `preflight.sh`, `probe_bandwidth.sh`, `start.sh`, `download_weights.py`. Delete the old `ltx2-video-gpu/render_settings/` if it still exists.
+Optional secret: `LTX2_GPU_ANTHROPIC_API_KEY` (enables the automatic mistake review).
 
-Unchanged, leave alone: `scripts/download_weights.py` (kept for `PREDOWNLOAD=1`), `scripts/preflight.sh`,
-`scripts/probe_bandwidth.sh`, `scripts/start.sh`.
-
-**Workflow caution:** your repo's workflow and `probe_bandwidth.sh` already differ from the ones I delivered (the logs show
-`SAMPLES=` and a 600 Mbps bar), so do not blindly replace them. Apply these changes to your copy, or diff against
-the delivered `ltx2-gpu.yml`:
-1. Step "Credit after + spend": `source /tmp/run_stats.env` becomes `set -a; source /tmp/run_stats.env; set +a`.
-2. New step before "Credit before": "Lint render suite (free)" (runs `scripts/lint_suite.py`), copied from the delivered file.
-3. Timeouts: render step `timeout-minutes: 240` with `MAX_S=13800`, job `timeout-minutes: 330`; artifact `retention-days: 14`.
-4. Hold step: restart the app (`ssh ... 'cd ~ && nohup bash start.sh ...'`) when `render_test` is true, then wait for HTTP 200.
-5. New inputs `predownload`, `wan2gp_update` (+ `export ... PREDOWNLOAD=$PREDL WANGP_UPDATE=$UPDL` in the Deploy ssh command) and `suite_tier` (`smoke`/`standard`/`lab`); `weights_gb` default 73.
-6. The render step is replaced: it copies `render_test.py` + `render_suite/`, calls `scripts/run_remote_suite.sh`, pulls `results/`, appends `report.md` to the run Summary.
-
-Created automatically by the workflow (do not add by hand): `ltx2-video-gpu/runs.csv`,
-`ltx2-video-gpu/render_runs/*.json`, and the new `attempts.csv` columns.
+Your repo's workflow differs from this one in small ways (for example the probe sampling). Diff before replacing, or take the whole file and re-apply your probe edits.
