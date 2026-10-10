@@ -1,61 +1,57 @@
 name: LTX2 Video GPU
-run-name: "${{ inputs.action }} — ${{ inputs.gpu_names }}"
+run-name: "${{ inputs.action }} · ${{ inputs.suite_file }} · ${{ inputs.suite_tier }}"
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: "search = rank live offers, spends nothing. run = rent best, PROBE real bandwidth, deploy, health check, (hold), ALWAYS destroy + verify. destroy_all = kill every instance on the account."
+        description: "run = rent the best GPU, render the suite, always destroy. search = rank offers only (free). destroy_all = kill everything."
         required: true
         type: choice
-        options: [search, run, destroy_all]
-        default: search
+        options: [run, search, destroy_all]
+        default: run
+      suite_file:
+        description: "Test file in render_suite/ (cases.json or cases-pratical-utube.json)."
+        required: false
+        type: string
+        default: "cases.json"
+      suite_tier:
+        description: "smoke = 2 cases · standard = the whole file · lab = quality sweeps (cases.json)."
+        required: false
+        type: choice
+        options: ["standard", "smoke", "lab"]
+        default: "standard"
+      min_real_mbps:
+        description: "Probe bar (Mbps) measured on the box."
+        required: false
+        type: string
+        default: "600"
       gpu_names:
-        description: "Vast gpu_name tokens, comma separated, underscores. The ranking picks among them."
+        description: "GPU models to consider."
         required: false
         type: string
         default: "RTX_4090,RTX_5090,RTX_3090,A100_PCIE,A100_SXM4"
-      render_hours:
-        description: "Expected GPU render hours per daily run (unverified until a real render is timed) - render_hours -"
+      ui_first_min:
+        description: "Minutes the web UI stays usable before the suite starts (the suite stops the UI)."
         required: false
         type: string
-        default: "2"
-      weights_gb:
-        description: "GB downloaded per fresh instance (LTX-2 43GB + Gemma ~24GB). Update from data_gb in attempts.csv. - weights_gb - "
-        required: false
-        type: string
-        default: "67"
-      max_ready_min:
-        description: "Reject offers estimated to take longer than this to be ready (boot + download + app start) - max_ready_min -"
-        required: false
-        type: string
-        default: "15"
-      min_real_mbps:
-        description: "Bar for the on-box probe against Hugging Face. 'auto' = what max_ready_min needs for weights_gb. - min_real_mbps-"
-        required: false
-        type: string
-        default: "auto"
-      max_dph:
-        description: "Reject offers above this $/hr (includes disk) - max_dph -"
-        required: false
-        type: string
-        default: "0.60"
-      max_dl_cost_per_gb:
-        description: "Reject hosts charging more than this $/GB for downloads (0.004 = $4/TB)- max_dl_cost_per_gb -"
-        required: false
-        type: string
-        default: "0.004"
+        default: "0"
       hold_min:
-        description: "run only: keep the instance up this many minutes for a manual render test (max 60), then destroy - hold_min - "
+        description: "Minutes to keep the box up after the suite (UI restarted)."
         required: false
         type: string
         default: "0"
       wan2gp_image:
-        description: "Locked default — only change after checking hub.docker.com/r/robatvastai/wan2gp/tags and deliberately deciding to move - wan2gp_image-"
-        required: true
+        description: "Docker image tag. Change only on purpose."
+        required: false
         type: string
         default: "robatvastai/wan2gp:b8b18f8-2026-10-01-cuda-12.9-amd64"
-
+      fixed_settings:
+        description: "READ-ONLY: fixed in the YAML (edit the file to change)."
+        required: false
+        type: choice
+        options: ["max est. ready 30 min · max $0.60/h · max $0.004/GB · ~73 GB pulled per box · render budget 2 h · Wan2GP auto-update ON · no pre-download"]
+        default: "max est. ready 30 min · max $0.60/h · max $0.004/GB · ~73 GB pulled per box · render budget 2 h · Wan2GP auto-update ON · no pre-download"
 permissions:
   contents: write
 
@@ -67,21 +63,31 @@ concurrency:
 env:
   PROJECT_DIR: ltx2-video-gpu
   ATTEMPTS_FILE: ltx2-video-gpu/attempts.csv
+  RUNS_FILE: ltx2-video-gpu/runs.csv
   NEW_ATTEMPTS: /tmp/attempts_new.csv
   IID_FILE: /tmp/ltx2_iids
-  DISK_GB: "120"
+  DISK_GB: "250"   # lab tier only; standard fits in 120
   TOP_N: "5"
   BOOT_S: "120"
   APP_S: "90"
   EFF: "0.7"
   REF_DLPERF: "98.5"
-  BOOT_TIMEOUT_S: "420"
+  # History (15 boxes): every box that came up did so in <= 185 s; the 8 that did not were cut at this timeout.
+  BOOT_TIMEOUT_S: "300"
   COOLDOWN_DAYS: "7"
+  # Fixed (formerly inputs). Shown in the job log and summary by the "Settings in effect" step.
+  WEIGHTS_GB: "73"        # GB Wan2GP pulls per fresh box (Qwen-Image 31 + LTX 42), only used to estimate readiness
+  RENDER_HOURS: "2"       # render budget used in the cost-per-run ranking
+  MAX_READY_MIN: "30"     # reject offers whose ESTIMATED ready time is longer
+  MAX_DPH: "0.40"         # reject offers above this $/hour
+  MAX_DL_COST: "0.004"    # reject hosts charging more per GB downloaded
+  WANGP_UPDATE_FIXED: "1" # update Wan2GP on the box (rolls back if it will not start)
+  PREDOWNLOAD_FIXED: "0"  # the old 67 GB pre-download was never used by Wan2GP
 
 jobs:
   gpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     env:
       VAST_KEY: ${{ secrets.LTX2_GPU_VAST_API_KEY }}
       HF_TOKEN_VALUE: ${{ secrets.LTX2_GPU_HF_TOKEN }}
@@ -98,6 +104,27 @@ jobs:
           : > "$NEW_ATTEMPTS"
           : > /tmp/run_stats.env
           pip install -q 'vastai==1.8.3'
+
+      - name: Settings in effect (inputs + fixed values)
+        run: |
+          {
+            echo "### Settings in effect"
+            echo "| setting | value | where |"
+            echo "|---|---|---|"
+            echo "| action | ${{ github.event.inputs.action }} | input |"
+            echo "| suite file / tier | ${{ github.event.inputs.suite_file }} / ${{ github.event.inputs.suite_tier }} | input |"
+            echo "| probe bar | ${{ github.event.inputs.min_real_mbps }} Mbps | input |"
+            echo "| GPUs considered | ${{ github.event.inputs.gpu_names }} | input |"
+            echo "| UI before suite / hold after | ${{ github.event.inputs.ui_first_min }} min / ${{ github.event.inputs.hold_min }} min | input |"
+            echo "| Docker image | ${{ github.event.inputs.wan2gp_image }} | input |"
+            echo "| max estimated ready time | $MAX_READY_MIN min | fixed |"
+            echo "| max price / max download price | \$$MAX_DPH per h / \$$MAX_DL_COST per GB | fixed |"
+            echo "| GB pulled per box (estimate) | $WEIGHTS_GB | fixed |"
+            echo "| render budget (ranking) | $RENDER_HOURS h | fixed |"
+            echo "| Wan2GP update on the box | $WANGP_UPDATE_FIXED (1 = on, rolls back on failure) | fixed |"
+            echo "| pre-download of old weights | $PREDOWNLOAD_FIXED (0 = off) | fixed |"
+            echo "| boot timeout / cooldown | ${BOOT_TIMEOUT_S}s / ${COOLDOWN_DAYS} days | fixed |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Destroy ALL instances on the account
         if: ${{ github.event.inputs.action == 'destroy_all' }}
@@ -125,6 +152,24 @@ jobs:
             exit 1
           fi
 
+      - name: Lint render suite (free, before any GPU is rented)
+        if: ${{ github.event.inputs.action == 'run' }}
+        run: |
+          # Run 37297908189 paid for a box and only then learned image.json had a missing quote.
+          SUITE_FILE="${{ github.event.inputs.suite_file }}"
+          case "$SUITE_FILE" in ""|*/*|*..*) echo "::error::suite_file must be a plain file name inside render_suite/"; exit 1;; esac
+          [ -f "$PROJECT_DIR/render_suite/$SUITE_FILE" ] || { echo "::error::render_suite/$SUITE_FILE not found"; ls "$PROJECT_DIR/render_suite"; exit 1; }
+          python3 "$PROJECT_DIR"/scripts/lint_suite.py "$PROJECT_DIR/render_suite/$SUITE_FILE"
+
+      - name: Credit before
+        if: ${{ github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        run: |
+          # `credit` is the documented balance field of `vastai show user`; only that number is kept, never the full JSON.
+          CREDIT=$(vastai show user --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(json.load(sys.stdin).get('credit',''))" 2>/dev/null || true)
+          echo "CREDIT_BEFORE=$CREDIT" >> /tmp/run_stats.env
+          echo "Credit before: \$${CREDIT:-unknown}"
+
       - name: Preflight — HF token can read BOTH gated repos
         if: ${{ github.event.inputs.action == 'run' }}
         run: |
@@ -145,12 +190,7 @@ jobs:
       - name: Search live offers and rank by cost per run
         if: ${{ github.event.inputs.action != 'destroy_all' }}
         env:
-          WEIGHTS_GB: ${{ github.event.inputs.weights_gb }}
-          RENDER_HOURS: ${{ github.event.inputs.render_hours }}
-          MAX_READY_MIN: ${{ github.event.inputs.max_ready_min }}
-          MAX_DPH: ${{ github.event.inputs.max_dph }}
           GPU_NAMES: ${{ github.event.inputs.gpu_names }}
-          MAX_DL_COST: ${{ github.event.inputs.max_dl_cost_per_gb }}
         run: |
           set -e
           # cuda_max_good>=12.9 matches the image tag; cpu_arch=amd64 excludes ARM (GB10/DGX) hosts.
@@ -171,8 +211,6 @@ jobs:
         id: rent
         timeout-minutes: 45
         env:
-          WEIGHTS_GB: ${{ github.event.inputs.weights_gb }}
-          MAX_READY_MIN: ${{ github.event.inputs.max_ready_min }}
           MIN_REAL_MBPS: ${{ github.event.inputs.min_real_mbps }}
         run: |
           set -e
@@ -194,7 +232,7 @@ jobs:
             DPH=$(cand $idx dph_total)
             ADV_DOWN=$(cand $idx inet_down)
             echo "Attempt $((idx + 1))/$N: offer $OFFER_ID (machine $MACHINE_ID) — $GPU, \$${DPH}/hr, advertised ${ADV_DOWN} Mbps, est ready $(cand $idx ready_min) min"
-            log_attempt() { echo "$(date -u +%FT%TZ),$MACHINE_ID,$OFFER_ID,$GPU,$DPH,$ADV_DOWN,${2:-},${3:-},,,,$1" >> "$NEW_ATTEMPTS"; }
+            log_attempt() { echo "$(date -u +%FT%TZ),$MACHINE_ID,$OFFER_ID,$GPU,$DPH,$ADV_DOWN,${2:-},${3:-},,,,$1,$(cand $idx ready_min)" >> "$NEW_ATTEMPTS"; }
 
             T_CREATE=$(date +%s)
             CREATE_OUT=$(vastai create instance "$OFFER_ID" --image "$IMAGE" --disk "$DISK_GB" \
@@ -266,24 +304,43 @@ jobs:
         timeout-minutes: 32
         run: |
           set -e
-          SSH="ssh $SSH_OPTS -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
-          fail() { echo "$1"; echo "--- last 40 lines of deploy.log ---"; $SSH 'tail -n 40 ~/deploy.log' < /dev/null || true; exit 1; }
+          # ConnectTimeout=10 + an outer `timeout` wrapper on every poll call
+          # below: without these, a single hung SSH connection (TCP connects
+          # fine, then nothing comes back) blocks this entire step with ZERO
+          # output — no Poll lines, no error, nothing — until the 32-minute
+          # job timeout or a manual cancel. This is what "LAUNCHED" followed
+          # by total silence for 16 minutes actually was. ConnectTimeout alone
+          # doesn't cover it — it only guards the connect+auth phase, not a
+          # hang in the remote command after auth succeeds.
+          SSH="ssh $SSH_OPTS -o ConnectTimeout=10 -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
+          fail() { echo "$1"; echo "--- last 40 lines of deploy.log ---"; timeout 20 $SSH 'tail -n 40 ~/deploy.log' < /dev/null || true; exit 1; }
 
           # Ephemeral: /data is a plain directory so the scripts keep their paths.
-          $SSH "mkdir -p /data" < /dev/null
-          scp $SSH_OPTS -i ~/.ssh/deploy_key -P ${{ steps.rent.outputs.port }} \
+          timeout 20 $SSH "mkdir -p /data" < /dev/null
+          timeout 60 scp $SSH_OPTS -o ConnectTimeout=10 -i ~/.ssh/deploy_key -P ${{ steps.rent.outputs.port }} \
             "$PROJECT_DIR"/scripts/preflight.sh "$PROJECT_DIR"/scripts/bootstrap.sh "$PROJECT_DIR"/scripts/start.sh \
             "$PROJECT_DIR"/scripts/download_weights.py \
             root@${{ steps.rent.outputs.host }}:~/
 
           T_DEPLOY0=$(date +%s)
-          $SSH "export HF_TOKEN=\$(cat ~/.hf_token) && \
+          # -f: SSH's own built-in fix for exactly this situation — it tells
+          # the client to return as soon as the remote command has started,
+          # instead of waiting for the session/channel to fully close (which
+          # can hang even after a backgrounded job's own output is done).
+          # This is what was silently eating the local `timeout 20` budget
+          # and killing the step with exit 124 before polling ever began.
+          PREDL="$PREDOWNLOAD_FIXED"
+          UPDL="$WANGP_UPDATE_FIXED"
+          timeout 20 $SSH -f "export HF_TOKEN=\$(cat ~/.hf_token) PREDOWNLOAD=$PREDL WANGP_UPDATE=$UPDL && \
             nohup bash -c 'bash preflight.sh && bash bootstrap.sh && bash start.sh' \
             > ~/deploy.log 2>&1 < /dev/null & disown; echo LAUNCHED" < /dev/null
 
           PREV=-1; STALL=0; DONE=0
           for i in $(seq 1 120); do
-            CUR=$($SSH 'wc -c < ~/deploy.log 2>/dev/null || echo 0' < /dev/null | tr -dc '0-9')
+            # `timeout 20` on both calls: if the connection hangs rather
+            # than erroring, this forces a return every poll instead of
+            # freezing silently — the actual fix for the 16-minute hang.
+            CUR=$(timeout 20 $SSH 'wc -c < ~/deploy.log 2>/dev/null || echo 0' < /dev/null | tr -dc '0-9')
             CUR=${CUR:-0}
             if [ "$CUR" -gt "$PREV" ]; then STALL=0; else STALL=$((STALL + 1)); fi
             PREV=$CUR
@@ -293,7 +350,7 @@ jobs:
             # previous version only ever surfaced remote output once, at
             # the very end. This is the fix for SSH/python output going
             # "out of radar" during a run.
-            TAIL=$($SSH 'tail -n 30 ~/deploy.log 2>/dev/null' < /dev/null || true)
+            TAIL=$(timeout 20 $SSH 'tail -n 30 ~/deploy.log 2>/dev/null' < /dev/null || true)
             echo "Poll $i: deploy.log ${CUR} bytes (stall $STALL)"
             echo "$TAIL" | tail -n 8
             if echo "$TAIL" | grep -q "Starting Wan2GP"; then DONE=1; break; fi
@@ -308,8 +365,8 @@ jobs:
           [ "$DONE" = "1" ] || fail "FAILED: no success/fail marker after 30 min"
 
           T_DEPLOYED=$(date +%s)
-          BYTES=$($SSH 'du -sb /data 2>/dev/null | cut -f1' < /dev/null | tr -dc '0-9')
-          DLLINE=$($SSH 'grep -h DL_STATS ~/deploy.log | tail -1' < /dev/null || true)
+          BYTES=$(timeout 20 $SSH 'du -sb /data 2>/dev/null | cut -f1' < /dev/null | tr -dc '0-9')
+          DLLINE=$(timeout 20 $SSH 'grep -h DL_STATS ~/deploy.log | tail -1' < /dev/null || true)
           DL_MBPS=$(echo "$DLLINE" | grep -oE 'mbps=[0-9]+' | grep -oE '[0-9]+' || echo 0)
           { echo "T_DEPLOY0=$T_DEPLOY0"; echo "T_DEPLOYED=$T_DEPLOYED"; echo "DATA_BYTES=${BYTES:-0}"; echo "DL_MBPS=${DL_MBPS:-0}"; } >> /tmp/run_stats.env
           echo "Deploy finished in $((T_DEPLOYED - T_DEPLOY0))s; /data holds $(( ${BYTES:-0} / 1000000000 ))GB; download ${DL_MBPS:-0} Mbps"
@@ -333,6 +390,11 @@ jobs:
           [ "$CODE" = "200" ] || { echo "FAIL: $URL never answered"; exit 1; }
 
           T_HEALTHY=$(date +%s)
+          echo "::notice title=Web UI is up (HTTP 200)::$URL"
+          echo "=============================================================="
+          echo " WEB UI READY (HTTP 200):  $URL"
+          echo " The suite stops the UI when it starts (frees VRAM); it comes back for hold_min."
+          echo "=============================================================="
           echo "T_HEALTHY=$T_HEALTHY" >> /tmp/run_stats.env
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           source /tmp/run_stats.env
@@ -345,18 +407,83 @@ jobs:
             echo "- URL: $URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Web UI window (optional, before the suite)
+        if: ${{ github.event.inputs.action == 'run' }}
+        run: |
+          URL="${{ steps.health.outputs.url }}"
+          M="${{ github.event.inputs.ui_first_min }}"
+          echo "UI: $URL"
+          if [ "${M:-0}" -gt 0 ] 2>/dev/null; then
+            echo "You have $M min to use the UI. The suite starts after that and stops the UI."
+            echo "### UI open for $M min before the suite: $URL" >> "$GITHUB_STEP_SUMMARY"
+            sleep $((M * 60))
+          fi
+          echo "Starting the suite now; the UI stops."
+
+      - name: Render suite — images + videos on the live box, pull results
+        if: ${{ github.event.inputs.action == 'run' }}
+        timeout-minutes: 240
+        run: |
+          # GitHub runs `bash -e` by default; turn it off so a failing render still reaches the scp that
+          # pulls results before cleanup destroys the box.
+          set +e
+          T_OPTS="-o ConnectTimeout=10 -i $HOME/.ssh/deploy_key"
+          HOST="${{ steps.rent.outputs.host }}"; PORT="${{ steps.rent.outputs.port }}"
+          TIER="${{ github.event.inputs.suite_tier }}"
+          SUITE_FILE="${{ github.event.inputs.suite_file }}"
+          source /tmp/run_stats.env 2>/dev/null
+          timeout 300 scp -r $SSH_OPTS $T_OPTS -P "$PORT" \
+            "$PROJECT_DIR"/scripts/render_test.py "$PROJECT_DIR"/render_suite root@"$HOST":~/ < /dev/null
+          T0=$(date +%s)
+          # Detached on the box, polled from here: a dropped SSH connection cannot kill a long suite.
+          REMOTE="ssh $SSH_OPTS $T_OPTS -p $PORT root@$HOST" TIER="${TIER:-standard}" SUITE_FILE="${SUITE_FILE:-cases.json}" DPH="${DPH:-0}" MAX_S=13800 \
+            bash "$PROJECT_DIR"/scripts/run_remote_suite.sh
+          RC=$?
+          echo "render suite exit $RC after $(( $(date +%s) - T0 ))s"
+          echo "T_RENDER_S=$(( $(date +%s) - T0 ))" >> /tmp/run_stats.env
+          mkdir -p results
+          timeout 1200 scp -r $SSH_OPTS $T_OPTS -P "$PORT" root@"$HOST":~/results/. results/ < /dev/null || echo "::warning::could not pull results"
+          [ -f results/report.md ] && cat results/report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "### Render suite (${SUITE_FILE:-cases.json} / ${TIER:-standard}): exit $RC, $(( $(date +%s) - T0 ))s" >> "$GITHUB_STEP_SUMMARY"
+          exit $RC
+
       - name: Hold for a manual render test, then continue to cleanup
         if: ${{ github.event.inputs.action == 'run' && github.event.inputs.hold_min != '0' && github.event.inputs.hold_min != '' }}
         timeout-minutes: 65
         run: |
           HOLD="${{ github.event.inputs.hold_min }}"
           if [ "$HOLD" -gt 60 ]; then HOLD=60; fi
-          echo "Instance stays up $HOLD min: ${{ steps.health.outputs.url }} — it is destroyed automatically afterwards."
-          echo "### Hold: ${{ steps.health.outputs.url }} for $HOLD min (time one real render now)" >> "$GITHUB_STEP_SUMMARY"
+          URL="${{ steps.health.outputs.url }}"
+          if true; then
+            # render_test.py stops the Gradio app to free VRAM (run 2: the URL refused connections for exactly this reason).
+            # Start it again so the held box is usable, then wait until it answers.
+            T_OPTS="-o ConnectTimeout=10 -i $HOME/.ssh/deploy_key"
+            timeout 30 ssh $SSH_OPTS $T_OPTS -p "${{ steps.rent.outputs.port }}" root@"${{ steps.rent.outputs.host }}" \
+              'cd ~ && nohup bash start.sh > ~/app.log 2>&1 < /dev/null & disown; echo restart-issued' < /dev/null || echo "::warning::could not restart the app"
+            CODE=000
+            for i in $(seq 1 36); do
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$URL" || true)
+              [ "$CODE" = "200" ] && break
+              sleep 5
+            done
+            echo "App restarted for the hold: HTTP $CODE"
+          fi
+          echo "Instance stays up $HOLD min: $URL — it is destroyed automatically afterwards."
+          echo "### Hold: $URL for $HOLD min" >> "$GITHUB_STEP_SUMMARY"
           sleep $((HOLD * 60))
           SSH="ssh $SSH_OPTS -i ~/.ssh/deploy_key -p ${{ steps.rent.outputs.port }} root@${{ steps.rent.outputs.host }}"
           echo "Disk after the test (did Wan2GP fetch extra checkpoints?):"
           $SSH "du -sh /data /opt/workspace-internal/Wan2GP/ckpts 2>/dev/null; df -h / | tail -1" < /dev/null | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Pull logs from the box before it is destroyed
+        if: ${{ always() && github.event.inputs.action == 'run' && steps.rent.outputs.host != '' }}
+        continue-on-error: true
+        run: |
+          # Actions shows only the last lines of deploy.log per poll; this keeps the whole file.
+          mkdir -p results
+          T_OPTS="-o ConnectTimeout=10 -i $HOME/.ssh/deploy_key"
+          timeout 90 scp $SSH_OPTS $T_OPTS -P "${{ steps.rent.outputs.port }}" \
+            root@"${{ steps.rent.outputs.host }}":~/deploy.log results/deploy.log < /dev/null || echo "::warning::no deploy.log"
 
       - name: Cleanup — destroy everything this run created, then verify
         if: ${{ always() && github.event.inputs.action == 'run' }}
@@ -382,23 +509,53 @@ jobs:
           if [ "$TOTAL" != "0" ]; then echo "::warning::$TOTAL other instance(s) exist on the account (not created by this run)."; fi
           echo "### Cleanup verified: ${IDS:-none} destroyed; $TOTAL instance(s) left on the account" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Log attempts to attempts.csv (never blocks cleanup)
+      - name: Credit after + spend
         if: ${{ always() && github.event.inputs.action == 'run' }}
         continue-on-error: true
         run: |
-          source /tmp/run_stats.env 2>/dev/null || true
-          mkdir -p "$(dirname "$ATTEMPTS_FILE")"
-          if [ ! -f "$ATTEMPTS_FILE" ]; then
-            echo "timestamp,machine_id,offer_id,gpu,dph,adv_down_mbps,boot_s,probe_mbps,dl_mbps,ready_min,data_gb,result" > "$ATTEMPTS_FILE"
-          fi
-          if [ -s "$NEW_ATTEMPTS" ]; then cat "$NEW_ATTEMPTS" >> "$ATTEMPTS_FILE"; fi
-          if [ -n "$OFFER_ID" ]; then
-            if [ -n "$T_HEALTHY" ]; then RESULT=ok; READY=$(( (T_HEALTHY - T_CREATE) / 60 )); else RESULT=deploy_failed; READY=""; fi
-            echo "$(date -u +%FT%TZ),$MACHINE_ID,$OFFER_ID,$GPU,$DPH,$ADV_DOWN,$BOOT_OBS,$PROBE_MBPS,${DL_MBPS:-},$READY,$(( ${DATA_BYTES:-0} / 1000000000 )),$RESULT" >> "$ATTEMPTS_FILE"
+          CREDIT=$(vastai show user --raw --api-key "$VAST_KEY" | python3 -c "import json,sys; print(json.load(sys.stdin).get('credit',''))" 2>/dev/null || true)
+          echo "CREDIT_AFTER=$CREDIT" >> /tmp/run_stats.env
+          set -a; source /tmp/run_stats.env; set +a   # export, or python's os.environ cannot see the values
+          SPENT=$(python3 -c "import os; b,a=os.environ.get('CREDIT_BEFORE'),os.environ.get('CREDIT_AFTER'); print(round(float(b)-float(a),4) if b and a else 'unknown')")
+          echo "Credit: \$${CREDIT_BEFORE:-?} -> \$${CREDIT_AFTER:-?}  spent \$${SPENT} (billing can lag a few minutes; runs.csv keeps the number)"
+          echo "### Spend: \$${SPENT} (credit \$${CREDIT_BEFORE:-?} -> \$${CREDIT_AFTER:-?})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Automatic mistake review (optional; needs the LTX2_GPU_ANTHROPIC_API_KEY secret)
+        if: ${{ always() && github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.LTX2_GPU_ANTHROPIC_API_KEY }}
+        run: |
+          python3 "$PROJECT_DIR"/scripts/qa_review.py
+          [ -f results/qa_review.md ] && cat results/qa_review.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload artifact (render outputs, results.json, deploy.log, GPU csv)
+        if: ${{ always() && github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-${{ github.run_id }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Log attempts + run ledger to git (never blocks cleanup)
+        if: ${{ always() && github.event.inputs.action == 'run' }}
+        continue-on-error: true
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # attempts.csv = one row per box (host memory); runs.csv = one row per run (credit before/after).
+          python3 "$PROJECT_DIR"/scripts/log_attempt.py
+          if [ -f results/results.json ]; then
+            mkdir -p "$PROJECT_DIR/render_runs"
+            source /tmp/run_stats.env 2>/dev/null || true
+            cp results/results.json "$PROJECT_DIR/render_runs/$(date -u +%Y%m%dT%H%M%SZ)_m${MACHINE_ID:-none}.json"
+            git add "$PROJECT_DIR/render_runs"
           fi
           git config user.name "ltx2-gpu-bot"
           git config user.email "actions@github.com"
-          git add "$ATTEMPTS_FILE"
-          git commit -m "Log: $(tail -1 "$ATTEMPTS_FILE")" || echo "Nothing to commit"
+          git add "$ATTEMPTS_FILE" "$RUNS_FILE"
+          git commit -m "Log: run ${{ github.run_id }}" || echo "Nothing to commit"
           git pull --rebase || true
           git push || echo "::warning::could not push attempts.csv"

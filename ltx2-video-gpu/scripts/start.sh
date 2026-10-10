@@ -1,6 +1,8 @@
 #!/bin/bash
 # start.sh — only run after bootstrap.sh has completed.
 set -e
+set -x   # trace every command — same reasoning as bootstrap.sh
+export PYTHONUNBUFFERED=1   # same reasoning as bootstrap.sh — covers wgp.py's own startup output too
 
 source "$HOME/.ltx2_env"
 cd "$WAN2GP_DIR"
@@ -17,4 +19,4 @@ echo "=================================================="
 echo "Starting Wan2GP — will listen on port 7860"
 echo "=================================================="
 
-"$PYTHON_BIN" wgp.py --listen --server-port 7860
+"$PYTHON_BIN" -u wgp.py --listen --server-port 7860

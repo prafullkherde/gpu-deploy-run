@@ -50,6 +50,7 @@ APP_S = num("APP_S", 90)
 REF_DLPERF = num("REF_DLPERF", 98.5)
 TOP_N = int(num("TOP_N", 5))
 COOLDOWN_DAYS = num("COOLDOWN_DAYS", 7)
+PROVEN_DISCOUNT = num("PROVEN_DISCOUNT", 0.75)
 
 
 def fnum(x):
@@ -85,7 +86,10 @@ def calibrate(rows):
     last = {}
     for r in rows:  # file order is chronological; later rows win
         last[str(r.get("machine_id"))] = r
-    return eff, boot, last, len(ratios), len(boots)
+    # "Proven" = some past box on this machine booted, accepted SSH and passed the real HF probe.
+    # Independent of later deploy_failed rows, which were script bugs, not host faults.
+    proven = {str(x.get("machine_id")) for x in rows if x.get("result") in {"ok", "deploy_failed"} and fnum(x.get("probe_mbps")) > 0}
+    return eff, boot, last, len(ratios), len(boots), proven
 
 
 def recent_failure(row):
@@ -157,9 +161,14 @@ def main():
     with open(OFFERS) as f:
         offers = json.load(f)
 
-    eff, boot_s, last, n_ratio, n_boot = calibrate(load_history())
+    eff, boot_s, last, n_ratio, n_boot, proven = calibrate(load_history())
     evals = [evaluate(o, eff, boot_s, last) for o in offers]
-    ok = sorted((e for e in evals if not e["reasons"]), key=lambda e: (e["cost"], e["ready_min"]))
+    # Soft preference: proven machines rank as if 25% cheaper. Ranking only; est_run_usd stays honest.
+    def rank(e):
+        discount = PROVEN_DISCOUNT if str(e["o"].get("machine_id")) in proven else 1.0
+        return (e["cost"] * discount, e["ready_min"])
+
+    ok = sorted((e for e in evals if not e["reasons"]), key=rank)
 
     # One candidate per machine: retrying a host that just failed wastes time.
     seen, picks = set(), []
@@ -174,7 +183,8 @@ def main():
         f"### Offer ranking: {len(offers)} offers, {len(ok)} pass gates "
         f"(weights {WEIGHTS_GB:.0f}GB, ready <= {MAX_READY_MIN:.0f}m, <= ${MAX_DPH:.2f}/hr, render {RENDER_H}h)\n"
         f"Calibration: eff {eff:.2f} from {n_ratio} measured run(s) (default {EFF}), "
-        f"boot {boot_s:.0f}s from {n_boot} run(s) (default {BOOT_S:.0f}s)\n"
+        f"boot {boot_s:.0f}s from {n_boot} run(s) (default {BOOT_S:.0f}s), "
+        f"{len(proven)} proven machine(s)\n"
     )
 
     if not picks:

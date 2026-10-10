@@ -1,0 +1,592 @@
+{
+ "_readme": "Cases for render_test.py. Tiers: smoke < standard < lab. 'base' = shared quality text appended to every prompt; 'rules' = per-object fixes (sword in scabbard, animals keep animal bodies, ...) listed per case. standard = 4 images + 5 videos (10-15 s). lab = sweeps (one change each). No children, no blood.",
+ "limits": {
+  "max_images": 5,
+  "max_videos": 5,
+  "min_s": 10,
+  "max_s": 15
+ },
+ "base": {
+  "image_positive": "Anatomically correct, one head per person, correct number of limbs, two hands with five fingers each, natural proportions, props held and worn the way they are in real life, consistent clothing, sharp focus, high detail, clean crisp edges, well exposed, evenly lit, vivid natural colours.",
+  "image_negative": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, extra limbs, two heads, fused bodies, floating objects, wrong proportions, text artefacts, watermark",
+  "video_positive": "Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Each person has one head and two arms; objects keep their size, shape and colour from the first frame to the last; motion is smooth and physically plausible.",
+  "video_negative": "dark, underexposed, foggy, hazy, blurry, low contrast, washed out, flicker, morphing faces, extra limbs, two heads, objects changing shape, subtitles, watermark",
+  "rules": {
+   "sword_scabbard": {
+    "positive": "The sword is fully sheathed in a scabbard strapped diagonally across the back, only the hilt and crossguard visible above the right shoulder, blade hidden, hilt pointing up (never upside down), nothing sticking up past the shoulder.",
+    "negative": "drawn sword, bare blade, sword held in hand, upside-down hilt, blade sticking out above the shoulder",
+    "check": "Sword is in a scabbard on the back, hilt up above the shoulder, no bare blade."
+   },
+   "bed_covers": {
+    "positive": "A blanket covers the legs and body fully up to the chest, tucked in, both legs hidden under it.",
+    "negative": "uncovered legs, blanket only at the edge, legs sticking out",
+    "check": "Blanket covers the legs."
+   },
+   "animal_anatomy": {
+    "positive": "Real animal anatomy: a dog's head on a dog's body, four legs, paws not hands, normal dog proportions; clothing sits on the dog like a dog costume.",
+    "negative": "dog face on a human body, human hands on a dog, human torso on an animal",
+    "check": "Animals have real animal bodies (no human torso or hands)."
+   },
+   "two_person_dialogue": {
+    "positive": "Two characters stand facing each other at eye level, clearly separate bodies, each with a clear face; the speaker's mouth moves while the listener reacts with small nods and expressions; they speak one after the other, never together.",
+    "negative": "characters looking away from each other, merged bodies, both speaking at once, one face repeated",
+    "check": "Two distinct characters face each other, speak in turns, mouths match the speaker."
+   },
+   "talking_head": {
+    "positive": "One person looks straight into the camera, mouth shapes match the words, natural blinks, hands visible and anatomically correct.",
+    "negative": "mouth not moving, eyes looking away, distorted teeth",
+    "check": "Eyes on camera, lip movement matches speech, hands correct."
+   },
+   "singer_on_beach": {
+    "positive": "She looks straight into the camera with a happy smile and sings with clear, natural mouth movement, bright eyes, relaxed shoulders, hands visible and natural; her full body is visible head to toe at the end of the camera move.",
+    "negative": "eyes looking away, closed mouth while singing, cropped feet, distorted hands, extra fingers",
+    "check": "Eyes on camera, singing mouth motion, full body visible at the end, hands natural."
+   },
+   "physics_light": {
+    "positive": "Physically correct optics: a light ray bends toward the normal when it enters glass and away from it when it leaves; the angles are consistent; white light splits into a red-orange-yellow-green-blue-indigo-violet spectrum through a prism, red bending least; beams are straight lines.",
+    "negative": "curved beams, rays that cross incorrectly, wrong colour order, floating labels, garbled text",
+    "check": "Ray bends toward the normal entering glass and away leaving; spectrum order red to violet; no garbled text."
+   },
+   "object_motion": {
+    "positive": "Every object keeps the same size and colour throughout; moving parts stay attached; motion follows gravity and contact realistically.",
+    "negative": "objects growing or shrinking, parts detaching, objects passing through each other",
+    "check": "Objects keep size and shape; no clipping or morphing."
+   }
+  }
+ },
+ "cases": [
+  {
+   "id": "I01",
+   "name": "I01_ghibli_traveler",
+   "concept": "C01 Ghibli traveler",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "standard",
+   "origin": "mine",
+   "timeout_s": 900,
+   "note": "Keyframe for V01. Rule sword_scabbard fixes the sword above the shoulder / upside-down hilt.",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "Studio Ghibli-style hand-painted anime illustration, clean crisp line art, richly detailed painted backgrounds. A lone young man seen from behind in a three-quarter angle, messy brown hair, a turquoise tunic with a brown belt, standing on an old mossy stone wall, fully and evenly lit. A wide green valley opens in front of him; on the left, far away, a small stone castle on a hill; on the right, below the wall, a village of thatched roofs with a thin line of smoke; straight ahead at eye level a huge snow-capped mountain range under fluffy white clouds in a bright blue sky, a winding dirt road across the rolling hills. Bright midday sun from the front-left, no backlight, no silhouette. Vivid saturated greens, warm golds, clear blue sky. No text, no watermark.",
+    "resolution": "1664x928",
+    "seed": 42,
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   }
+  },
+  {
+   "id": "I06",
+   "name": "I06_dog_taxi_driver",
+   "concept": "C06 Dogs in a taxi",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "standard",
+   "origin": "pasted",
+   "timeout_s": 900,
+   "note": "Keyframe for V06. Rule animal_anatomy keeps dogs as dogs.",
+   "rules": [
+    "animal_anatomy"
+   ],
+   "settings": {
+    "prompt": "Photorealistic cinematic photograph inside a yellow New York taxi cab in bright daylight. A black Labrador sits upright on the driver seat, wearing a yellow taxi driver cap and aviator sunglasses, a yellow uniform shirt draped over its chest, both front paws resting on the steering wheel. On the front passenger seat sits a golden-retriever-mix dog looking curiously at the driver. Detailed taxi interior with dashboard, fare meter and seatbelt, the city street clearly visible through the windshield. Realistic fur with individual hairs, sharp eyes, 35 mm lens.",
+    "resolution": "1664x928",
+    "seed": 42,
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   }
+  },
+  {
+   "id": "I08",
+   "name": "I08_model_presenter",
+   "concept": "C08 Presenter",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "smoke",
+   "origin": "pasted",
+   "timeout_s": 900,
+   "note": "THE PRESENTER. Fashion-model look, adult, bright studio. Member of the 'presenter image' sweep.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   },
+   "sweep": "presenter image"
+  },
+  {
+   "id": "I20",
+   "name": "I20_beach_model",
+   "concept": "C20 Beach singer",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "standard",
+   "origin": "pasted",
+   "timeout_s": 900,
+   "note": "Keyframe for V20 (wide start; the video zooms in).",
+   "rules": [
+    "singer_on_beach"
+   ],
+   "settings": {
+    "prompt": "Photorealistic cinematic vertical photo of a stunning adult fashion model, long highlighted brown hair moving in a sea breeze, happy radiant smile, bright eyes looking straight into the camera, a fit athletic figure, wearing a dark red bikini top with a light white beach shirt tied loosely at the waist and white shorts, barefoot on damp sand at the water's edge of a wide Pacific coast beach. Shot from a distance so her whole body and the beach are visible head to toe, small in the frame; white foamy waves, soft grey-white sky, bright diffused daylight, crisp detail. Tasteful, elegant, magazine quality.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 30,
+    "guidance_scale": 4
+   }
+  },
+  {
+   "id": "V01",
+   "name": "V01_ghibli_traveler_10s",
+   "concept": "C01 Ghibli traveler",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "standard",
+   "origin": "mine",
+   "timeout_s": 1500,
+   "note": "Image-to-video from I01.",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward; his scabbard stays strapped on his back. White clouds drift across the blue sky, thin smoke sways above the village, the grass ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly. Hand-drawn animation feel, clean crisp lines, vivid colours. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler"
+  },
+  {
+   "id": "V06",
+   "name": "V06_dog_taxi_driver_10s",
+   "concept": "C06 Dogs in a taxi",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "standard",
+   "origin": "pasted",
+   "timeout_s": 1200,
+   "note": "Image-to-video from I06.",
+   "rules": [
+    "animal_anatomy"
+   ],
+   "settings": {
+    "prompt": "Cinematic live-action video, subtle handheld camera movement inside a moving taxi cab in bright daylight. The black Labrador driver turns its head toward the passenger, panting gently, one paw adjusting on the steering wheel; the aviator sunglasses and cap stay on its dog head. The golden retriever passenger blinks, tilts its head and glances at the driver. City buildings slide past the windows. Audio: engine hum, soft city traffic, a quiet fare-meter tick, a short friendly dog huff.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I06_dog_taxi_driver"
+  },
+  {
+   "id": "V08",
+   "name": "V08_model_presenter_speaks_15s",
+   "concept": "C08 Presenter",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "smoke",
+   "origin": "pasted",
+   "timeout_s": 1200,
+   "note": "THE PRESENTER: image-to-video from I08, 15 s of English speech. Listen for lip sync and clarity.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "The presenter in a brightly lit studio speaks directly to the camera in an energetic, friendly tone. She says in clear English: \"Stop paying twenty dollars a month for every AI tool. Pick an open model, grab a free test key, paste it into your editor, and you're running in minutes. Link in bio.\" Natural lip sync, subtle head tilts and nods, authentic eye blinks, two quick hand gestures for emphasis, natural breathing. Static camera with a very slight push-in, steady bright lighting on her face. Audio: her clear, loud, well-mixed voice, a quiet upbeat electronic music bed.",
+    "resolution": "704x1280",
+    "video_length": 361,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I08_model_presenter"
+  },
+  {
+   "id": "V20",
+   "name": "V20_beach_model_sings_15s",
+   "concept": "C20 Beach singer",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "standard",
+   "origin": "pasted",
+   "timeout_s": 1500,
+   "note": "THE SINGER: image-to-video from I20. Camera: wide, slow zoom-in to full body. LYRICS ARE ORIGINAL (the requested song's lyrics are copyrighted and are not reproduced); replace with your own or licensed text.",
+   "rules": [
+    "singer_on_beach"
+   ],
+   "settings": {
+    "prompt": "Start on a wide establishing shot: the model walks barefoot toward the camera along the wet sand at the water's edge, small in the frame, waves rolling in. The camera then slowly zooms in over fifteen seconds until her full body is clearly framed head to toe, then settles. She looks straight into the camera, smiling happily and attractively, and sings in a clear, warm, pop voice (original lyrics, edit freely): \"Barefoot in the sunshine, nothing left to buy, / love is in the laughter, underneath this open sky, / take my hand and dance with me, the tide is rolling in, / the best of every day is where the happy ones begin.\" Her hair and the white beach shirt move in the sea breeze. Audio: her singing voice front and centre, soft waves, a light acoustic guitar backing.",
+    "resolution": "704x1280",
+    "video_length": 361,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I20_beach_model"
+  },
+  {
+   "id": "V30",
+   "name": "V30_light_refraction_explainer_15s",
+   "concept": "C30 Physics explainer",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "standard",
+   "origin": "pasted",
+   "timeout_s": 1500,
+   "note": "THE OBJECTS-AND-MOTION EXAMPLE (replaces the blood story): text-to-video; checks optics and proportions.",
+   "rules": [
+    "physics_light",
+    "object_motion"
+   ],
+   "settings": {
+    "prompt": "A clean 3D educational animation in a modern science lab: a smooth wooden desk, a thick rectangular glass slab and a triangular glass prism, a thin white-green laser beam. A friendly anthropomorphic light-bulb teacher with round glasses stands beside the desk. First the beam enters the glass slab at an angle, bends toward the dashed normal line, travels through and bends away when it exits; the teacher points at it and nods. Then the beam hits the prism and fans out into a vivid spectrum from red to violet, red bending least. Smooth camera pans and zooms, macro detail on the bending light, softly blurred background, no text on screen. Audio: the teacher says in clear English: \"Light bends when it enters glass. A prism splits white light into seven colours.\" A gentle science-documentary music bed.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8
+   }
+  },
+  {
+   "id": "L01",
+   "name": "L01_qwen_4steps_old",
+   "concept": "LAB presenter image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "Old config (4 steps, CFG default): the control that produced the poor images.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 4
+   },
+   "sweep": "presenter image"
+  },
+  {
+   "id": "L02",
+   "name": "L02_qwen_model_defaults",
+   "concept": "LAB presenter image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "Only model, prompt, size, seed: Wan2GP's own defaults.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "qwen_image_20B"
+   },
+   "sweep": "presenter image"
+  },
+  {
+   "id": "L03",
+   "name": "L03_qwen_50steps",
+   "concept": "LAB presenter image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1800,
+   "note": "Official Qwen-Image recipe: 50 steps, CFG 4.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "qwen_image_20B",
+    "num_inference_steps": 50,
+    "guidance_scale": 4
+   },
+   "sweep": "presenter image"
+  },
+  {
+   "id": "L05",
+   "name": "L05_krea2_turbo",
+   "concept": "LAB presenter image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "Krea 2 Turbo (8 steps).",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "krea2_turbo"
+   },
+   "sweep": "presenter image"
+  },
+  {
+   "id": "L06",
+   "name": "L06_krea2_raw",
+   "concept": "LAB presenter image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1500,
+   "note": "Krea 2 RAW.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "krea2_raw"
+   },
+   "sweep": "presenter image"
+  },
+  {
+   "id": "L07",
+   "name": "L07_flux2_klein_9b",
+   "concept": "LAB presenter image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "Flux 2 Klein 9B.",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42,
+    "model_type": "flux2_klein_9b"
+   },
+   "sweep": "presenter image"
+  },
+  {
+   "id": "L08",
+   "name": "L08_qwen_image_2_1_if_present",
+   "concept": "LAB presenter image",
+   "kind": "image",
+   "mode": "t2i",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1800,
+   "note": "Qwen Image 2.1 if the box has it (matched by name).",
+   "rules": [
+    "talking_head"
+   ],
+   "settings": {
+    "prompt": "Photorealistic vertical medium shot of a beautiful adult woman, early twenties to thirty, glowing skin, expressive dark eyes, long softly styled hair, elegant natural makeup, wearing a stylish fitted ivory blazer over a silk emerald top and delicate gold jewellery, seated at a desk in a brightly lit modern studio. A strong soft key light on her face and a soft fill light, perfectly exposed skin tones, a subtle cyan and orange accent light only in the far background, a tidy shelf with small gadgets behind her in focus. She looks straight into the camera with a warm confident smile, shoulders relaxed, hands resting on the desk. Professional short-form video framing with headroom, sharp focus on the eyes, natural skin texture.",
+    "resolution": "928x1664",
+    "seed": 42
+   },
+   "model_match": [
+    "Qwen.*Image.*2\\.1"
+   ],
+   "sweep": "presenter image"
+  },
+  {
+   "id": "L11",
+   "name": "L11_ltx_distilled_1_1",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "LTX-2.3 Distilled 1.1.",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward; his scabbard stays strapped on his back. White clouds drift across the blue sky, thin smoke sways above the village, the grass ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly. Hand-drawn animation feel, clean crisp lines, vivid colours. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled_1_1",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L12",
+   "name": "L12_ltx_2_5_distilled",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "LTX-2.5 Distilled.",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward; his scabbard stays strapped on his back. White clouds drift across the blue sky, thin smoke sways above the village, the grass ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly. Hand-drawn animation feel, clean crisp lines, vivid colours. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_25_22B_distilled",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L13",
+   "name": "L13_ltx_dev_1_1_defaults",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 3000,
+   "note": "LTX-2.3 Dev 1.1 with its own defaults (slower).",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward; his scabbard stays strapped on his back. White clouds drift across the blue sky, thin smoke sways above the village, the grass ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly. Hand-drawn animation feel, clean crisp lines, vivid colours. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_1_1",
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video",
+   "negative": true
+  },
+  {
+   "id": "L14",
+   "name": "L14_ltx_25_dev_defaults",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 3000,
+   "note": "LTX-2.5 Dev with its own defaults.",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward; his scabbard stays strapped on his back. White clouds drift across the blue sky, thin smoke sways above the village, the grass ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly. Hand-drawn animation feel, clean crisp lines, vivid colours. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_25_22B",
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video",
+   "negative": true
+  },
+  {
+   "id": "L15",
+   "name": "L15_single_phase",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "Single high-res phase; key guidance_phases=1 UNVERIFIED (phases_seen shows if it took effect).",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward; his scabbard stays strapped on his back. White clouds drift across the blue sky, thin smoke sways above the village, the grass ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly. Hand-drawn animation feel, clean crisp lines, vivid colours. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "guidance_phases": 1,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L16",
+   "name": "L16_1080p",
+   "concept": "LAB ghibli video",
+   "kind": "video",
+   "mode": "i2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 2400,
+   "note": "1920x1088.",
+   "rules": [
+    "sword_scabbard"
+   ],
+   "settings": {
+    "prompt": "The painted Ghibli scene comes to life in bright daylight. The young man's tunic ripples in the breeze, he slowly turns his head to look across the valley and takes one calm step forward; his scabbard stays strapped on his back. White clouds drift across the blue sky, thin smoke sways above the village, the grass ripples in waves, birds cross the sky. The camera starts static, then pushes in slowly. Hand-drawn animation feel, clean crisp lines, vivid colours. Audio: steady wind, distant birdsong, a soft solo flute melody.",
+    "resolution": "1920x1088",
+    "video_length": 241,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+   },
+   "needs": "I01_ghibli_traveler",
+   "sweep": "ghibli video"
+  },
+  {
+   "id": "L17",
+   "name": "L17_waterfall_t2v",
+   "concept": "LAB text-to-video",
+   "kind": "video",
+   "mode": "t2v",
+   "tier": "lab",
+   "origin": "lab",
+   "timeout_s": 1200,
+   "note": "Text-to-video baseline for comparing against the image-to-video cases.",
+   "rules": [
+    "object_motion"
+   ],
+   "settings": {
+    "prompt": "Nature-documentary shot of a tall forest waterfall plunging into a turquoise pool, ferns and wet mossy rocks in the foreground, bright morning sunlight, crystal-clear air. The camera slowly tilts up from the pool to the top of the falls. The water flows smoothly, droplets sparkle, leaves sway, a dragonfly crosses the foreground. Audio: the roar of falling water, birdsong, rustling leaves.",
+    "resolution": "1280x704",
+    "video_length": 361,
+    "seed": 42,
+    "model_type": "ltx2_22B_distilled",
+    "num_inference_steps": 8
+   }
+  }
+ ]
+}
