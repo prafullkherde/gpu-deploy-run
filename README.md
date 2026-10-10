@@ -6,6 +6,18 @@ results back, **destroy the box**, and remember which hosts were good.
 Contents: 1 Files · 2 Flow · 3 Inputs · 4 State · 5 Host memory · 6 render_test.py · 7 Libraries ·
 8 Failure reasons · 9 Spend log · 10 Runbook · 11 Questions and answers · 12 UNVERIFIED · 13 Files to add or edit
 
+## Project overview
+
+This project automates the full lifecycle of renting a temporary GPU box on Vast.ai, deploying **Wan2GP** (for image and video generation with models such as Qwen-Image and LTX-2), optionally running a structured test suite, pulling results back, and destroying the box.
+
+**Key design principles:**
+- The GitHub Actions runner is the control plane; the GPU box is disposable.
+- Everything worth keeping (results, logs, host performance data, cost) is pulled back *before* the box is destroyed.
+- Host quality is remembered across runs via `attempts.csv` so future rentals prefer proven machines.
+- The test suite (`render_suite/cases.json`) is tiered (`smoke` → `standard` → `lab`) and covers both production-style generations and controlled quality experiments.
+
+The main workflow is triggered manually via GitHub Actions and supports search-only, full run, or destroy-all modes.
+
 ## 1. Files in this project
 
 ```
