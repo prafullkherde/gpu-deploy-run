@@ -30,7 +30,7 @@ on:
         description: "GPU models to consider."
         required: false
         type: string
-        default: "RTX_4090,RTX_5090,RTX_3090,A100_PCIE,A100_SXM4"
+        default: "RTX_4090,RTX_3090,RTX_5090,A100_PCIE,A100_SXM4"
       ui_first_min:
         description: "Minutes the web UI stays usable before the suite starts (the suite stops the UI)."
         required: false

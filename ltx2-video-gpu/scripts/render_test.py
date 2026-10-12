@@ -82,19 +82,34 @@ def tree_bytes(path):
     return total
 
 
+def ram_used_gb():
+    """System RAM in use (MemTotal - MemAvailable) in GB; Wan2GP offloads weights to RAM, so this is a real limit."""
+    try:
+        m = {k: int(v.split()[0]) for k, v in (ln.split(":", 1) for ln in open("/proc/meminfo"))}
+        return (m["MemTotal"] - m["MemAvailable"]) / 1048576
+    except (OSError, KeyError, ValueError):
+        return 0.0
+
+
 class GpuSampler(threading.Thread):
-    QUERY = "nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits"
+    QUERY = ("nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu,pcie.link.gen.current,pcie.link.width.current "
+             "--format=csv,noheader,nounits")
 
     def __init__(self):
         super().__init__(daemon=True)
         self.stop_evt = threading.Event()
         self.samples = []
+        self.pcie = []  # (gen, width) per sample; the link can idle at a lower gen, so we keep the maximum seen under load
+        self.ram = []   # system RAM in use, GB
 
     def run(self):
         while not self.stop_evt.wait(2):
             try:
-                mem, util, temp = (float(x) for x in sh(self.QUERY, 5).splitlines()[0].split(","))
+                parts = [x.strip() for x in sh(self.QUERY, 5).splitlines()[0].split(",")]
+                mem, util, temp = (float(x) for x in parts[:3])
                 self.samples.append((mem, util, temp))
+                self.pcie.append(tuple(int(x) if x.isdigit() else 0 for x in parts[3:5]) if len(parts) >= 5 else (0, 0))
+                self.ram.append(ram_used_gb())
             except (ValueError, IndexError):
                 continue  # transient nvidia-smi hiccup
 
@@ -111,6 +126,9 @@ class GpuSampler(threading.Thread):
         if not self.samples:
             return {"peak_vram_mb": None, "mean_util_pct": None, "max_temp_c": None}
         return {
+            "peak_ram_gb": round(max(self.ram), 1) if self.ram else None,
+            "pcie_gen": max((p[0] for p in self.pcie), default=0) or None,
+            "pcie_width": max((p[1] for p in self.pcie), default=0) or None,
             "peak_vram_mb": int(max(s[0] for s in self.samples)),
             "mean_util_pct": round(sum(s[1] for s in self.samples) / len(self.samples)),
             "max_temp_c": int(max(s[2] for s in self.samples)),
@@ -768,6 +786,8 @@ def main():
         "triton_patch": sh("grep -h 'PATCH denoiser_triton' ~/deploy.log | tail -1") or "no PATCH line in deploy.log",
         "packages": sh(f"{PYTHON_BIN} -c \"import importlib.metadata as m; print({{n: m.version(n) for n in ('torch','triton','sageattention','flash_attn','mmgp','gradio') "
                        "if any(d.metadata['Name'].lower().replace('-','_')==n for d in m.distributions())})\" 2>&1 | tail -1"),
+        "hw": {"cpu": sh("lscpu | grep -m1 'Model name' | cut -d: -f2").strip(), "cpu_cores": sh("nproc"),
+               "ram_gb": sh("awk '/MemTotal/ {print int($2/1048576)}' /proc/meminfo")},
         "model_catalog": {k: v for k, v in catalog.items()},
         "wgp_config": wgp_config_subset(),
     }
