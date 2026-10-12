@@ -47,9 +47,11 @@ MAX_DPH = num("MAX_DPH", 0.60)
 BOOT_S = num("BOOT_S", 120)
 APP_S = num("APP_S", 90)
 # DLPerf is only a proxy for render speed until a real render is timed.
-REF_DLPERF = num("REF_DLPERF", 98.5)
+REF_DLPERF = num("REF_DLPERF", 98.5)  # no longer used for ranking
+REF_SPEED = num("REF_SPEED", 9.0)      # measured s per video second (RTX 4090 and 5090, 10-15 s clips: 8.4 to 9.0)
 TOP_N = int(num("TOP_N", 5))
 COOLDOWN_DAYS = num("COOLDOWN_DAYS", 7)
+PROVEN_DISCOUNT = num("PROVEN_DISCOUNT", 0.75)
 
 
 def fnum(x):
@@ -69,6 +71,18 @@ def measured_ratio(row):
     return clamp(real / adv) if adv > 0 and real > 0 else None
 
 
+GPU_SPEED = {}  # GPU model -> measured wall seconds per video second (median over past runs)
+
+
+def gpu_speed_table(rows):
+    by = {}
+    for r in rows:
+        v = fnum(r.get("video_s_per_s"))
+        if v > 0:
+            by.setdefault(str(r.get("gpu", "")).replace(" ", "_"), []).append(v)
+    return {g: statistics.median(vs) for g, vs in by.items()}
+
+
 def load_history():
     path = os.environ.get("ATTEMPTS_FILE", "")
     if not path or not os.path.exists(path):
@@ -85,7 +99,10 @@ def calibrate(rows):
     last = {}
     for r in rows:  # file order is chronological; later rows win
         last[str(r.get("machine_id"))] = r
-    return eff, boot, last, len(ratios), len(boots)
+    # "Proven" = some past box on this machine booted, accepted SSH and passed the real HF probe.
+    # Independent of later deploy_failed rows, which were script bugs, not host faults.
+    proven = {str(x.get("machine_id")) for x in rows if fnum(x.get("probe_mbps")) > 0}
+    return eff, boot, last, len(ratios), len(boots), proven
 
 
 def recent_failure(row):
@@ -122,7 +139,11 @@ def evaluate(o, eff_default, boot_s, last):
 
     dl_s = WEIGHTS_GB * 8000 / (down * eff) if down else INF
     ready_min = (boot_s + dl_s + APP_S) / 60
-    render_h = RENDER_H * REF_DLPERF / dlperf if dlperf else INF
+    # Speed model: measured seconds per video second per GPU model (attempts.csv, column video_s_per_s). A GPU we have not
+    # measured yet counts as the reference speed, so cheaper cards get tried once and are then calibrated. DLPerf is not used:
+    # the 4090 and 5090 ran equally fast here (the pipeline is RAM/PCIe-bound) while DLPerf says 2x.
+    speed = GPU_SPEED.get(str(o.get("gpu_name", "")).replace(" ", "_"), REF_SPEED)
+    render_h = RENDER_H * speed / REF_SPEED
     # inet_down_cost is $/GB in the raw JSON (every row seen had raw == $/GB).
     bw = WEIGHTS_GB * (o.get("inet_down_cost") or 0.0)
     cost = dph * (ready_min / 60 + render_h) + bw
@@ -157,9 +178,16 @@ def main():
     with open(OFFERS) as f:
         offers = json.load(f)
 
-    eff, boot_s, last, n_ratio, n_boot = calibrate(load_history())
+    eff, boot_s, last, n_ratio, n_boot, proven = calibrate(load_history())
+    GPU_SPEED.update(gpu_speed_table(load_history()))
+    print(f"GPU speed, measured s per video second: {GPU_SPEED or 'none yet (every GPU is assumed equal, so the cheapest gets tried)'}")
     evals = [evaluate(o, eff, boot_s, last) for o in offers]
-    ok = sorted((e for e in evals if not e["reasons"]), key=lambda e: (e["cost"], e["ready_min"]))
+    # Soft preference: proven machines rank as if 25% cheaper. Ranking only; est_run_usd stays honest.
+    def rank(e):
+        discount = PROVEN_DISCOUNT if str(e["o"].get("machine_id")) in proven else 1.0
+        return (e["cost"] * discount, e["ready_min"])
+
+    ok = sorted((e for e in evals if not e["reasons"]), key=rank)
 
     # One candidate per machine: retrying a host that just failed wastes time.
     seen, picks = set(), []
@@ -174,7 +202,8 @@ def main():
         f"### Offer ranking: {len(offers)} offers, {len(ok)} pass gates "
         f"(weights {WEIGHTS_GB:.0f}GB, ready <= {MAX_READY_MIN:.0f}m, <= ${MAX_DPH:.2f}/hr, render {RENDER_H}h)\n"
         f"Calibration: eff {eff:.2f} from {n_ratio} measured run(s) (default {EFF}), "
-        f"boot {boot_s:.0f}s from {n_boot} run(s) (default {BOOT_S:.0f}s)\n"
+        f"boot {boot_s:.0f}s from {n_boot} run(s) (default {BOOT_S:.0f}s), "
+        f"{len(proven)} proven machine(s)\n"
     )
 
     if not picks:

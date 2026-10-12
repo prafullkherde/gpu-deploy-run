@@ -1,0 +1,69 @@
+{
+  "id": "S01",
+  "name": "S01_kitchen",
+  "t_in": "00:00.0",
+  "dur_s": 10,
+  "kind": "video",
+  "mode": "i2v",
+  "start_frame": "assets/keyframes/S01_kitchen_start.jpg",
+  "characters": ["keeper", "terrier"],
+  "location": "kitchen",
+  "framing": {
+    "size": "MS two-shot",
+    "angle": "eye-level",
+    "lens_mm": 35,
+    "dof": "shallow",
+    "screen_dir": "keeper left, terrier right"
+  },
+  "camera": {
+    "move": "gentle push-in",
+    "ease": "in-out",
+    "handheld": false
+  },
+  "action_beats": [
+    {"t": 0.0, "what": "Keeper stares at the porthole, deadpan"},
+    {"t": 2.0, "what": "Terrier jumps onto the table, knocks the teaspoon"},
+    {"t": 4.0, "what": "Keeper picks up the teaspoon with two fingers, puts it back carefully"},
+    {"t": 6.0, "what": "Terrier points both paws at the door"},
+    {"t": 8.0, "what": "Keeper sighs; terrier already bouncing toward the door"}
+  ],
+  "performance": {
+    "expr_arc": ["deadpan", "mild exasperation", "reluctant agreement"],
+    "eyeline": "each other, then door"
+  },
+  "env": {
+    "time": "day, interior",
+    "weather": "n/a",
+    "props_state": ["teapot on table", "teaspoon moves then returns"]
+  },
+  "light": {
+    "key": "warm lamp",
+    "contrast": "soft",
+    "grade": "warm clay studio"
+  },
+  "audio": {
+    "dialog": [
+      {"t": 0.5, "who": "keeper", "line": "The tide is late. Again."},
+      {"t": 2.5, "who": "terrier", "line": "Maybe the sea is on holiday!"},
+      {"t": 4.5, "who": "keeper", "line": "Seas do not take holidays."},
+      {"t": 6.5, "who": "terrier", "line": "Then we go tell it!"}
+    ],
+    "sfx": ["ticking clock", "teaspoon clink", "soft chair scrape"],
+    "music": "soft ukulele sting at the end"
+  },
+  "continuity": {
+    "in": "matches PI01 / uncle_dog_clay_pair still: both facing each other at table",
+    "out": "terrier moving toward door; keeper turning to follow -> S02"
+  },
+  "transition": "hard cut",
+  "negative": ["photorealistic", "extra limbs", "both speaking at once", "text", "watermark"],
+  "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 42,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+  },
+  "compiled_prompt": "Plasticine stop-motion two-shot in a cosy clay lighthouse kitchen. On the left a tall lanky clay lighthouse keeper with a drooping ginger moustache, round wire glasses and an oversized yellow raincoat; on the right a short round clay terrier standing upright in a knitted green hat and tiny red scarf. They face each other at eye level. The keeper stares at the porthole and says in a slow deadpan English voice: \"The tide is late. Again.\" The terrier jumps onto the table, knocks the teaspoon, and answers in a quick high voice: \"Maybe the sea is on holiday!\" The keeper carefully picks up the teaspoon with two fingers and puts it back: \"Seas do not take holidays.\" The terrier points both paws at the door: \"Then we go tell it!\" Keeper sighs; terrier bounces toward the door. Slightly stepped stop-motion, gentle camera push-in, warm lamp light. Audio: clear turn-taking voices, ticking clock, teaspoon clink, soft ukulele sting."
+}

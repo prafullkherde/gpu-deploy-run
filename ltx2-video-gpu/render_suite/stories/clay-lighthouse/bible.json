@@ -1,0 +1,57 @@
+{
+  "_readme": "Story bible for clay-lighthouse. Characters and locations are locked here. Profile images live in assets/characters/. Scene start frames live in assets/keyframes/. Shot files in shots/ reference these paths. Do not put raw model out/ files or per-case logs here.",
+  "fps": 24,
+  "aspect": "16:9",
+  "gen_res": "1280x704",
+  "style": {
+    "look": "Hand-made plasticine stop-motion",
+    "surface": "visible thumbprints and tiny imperfections in the clay, matte clay surface",
+    "motion": "slightly stepped stop-motion",
+    "light": "warm studio for interiors; cool overcast coastal for exteriors",
+    "positive": "Hand-made plasticine stop-motion look: visible thumbprints and tiny imperfections in the clay, matte clay surface, slightly stepped stop-motion motion, warm studio lighting indoors, solid-colour clay props with simple shapes.",
+    "negative": "photorealistic, smooth glossy CGI, realistic human skin, digital blur, motion smear, extra limbs, two heads, text, watermark"
+  },
+  "characters": {
+    "keeper": {
+      "id": "keeper",
+      "name": "Lighthouse Keeper",
+      "lock": ["face", "moustache", "glasses", "yellow raincoat", "proportions"],
+      "description": "Tall lanky clay lighthouse keeper with a drooping ginger moustache, round wire glasses and an oversized yellow raincoat.",
+      "ref_imgs": [
+        "assets/characters/keeper_front.jpg",
+        "assets/characters/keeper_side.jpg"
+      ],
+      "voice": "slow deadpan English male"
+    },
+    "terrier": {
+      "id": "terrier",
+      "name": "Clay Terrier",
+      "lock": ["face", "green hat", "red scarf", "round body", "proportions"],
+      "description": "Short round clay terrier dog standing upright on two legs in a knitted green hat and a tiny red scarf.",
+      "ref_imgs": [
+        "assets/characters/terrier_front.jpg",
+        "assets/characters/terrier_side.jpg"
+      ],
+      "voice": "quick high English"
+    }
+  },
+  "locations": {
+    "kitchen": {
+      "id": "kitchen",
+      "description": "Cosy clay lighthouse kitchen: wooden table, teapot, porthole window, warm lamp light.",
+      "ref_img": "assets/keyframes/S01_kitchen_start.jpg"
+    },
+    "doorway": {
+      "id": "doorway",
+      "description": "Open lighthouse doorway, yellow raincoat flapping, grey-green sea and white waves behind, overcast coastal light.",
+      "ref_img": "assets/keyframes/S02_doorway.jpg"
+    },
+    "clifftop": {
+      "id": "clifftop",
+      "description": "Cliff edge above the sea, both characters side by side looking at the horizon, wind, overcast.",
+      "ref_img": "assets/keyframes/S03_clifftop.jpg"
+    }
+  },
+  "rules": ["clay_style", "two_person_dialogue", "object_motion"],
+  "source_keyframe_note": "Existing practical suite keyframe PI01_clay_pair_keyframe and video-assets/uncle_dog_clay_pair.jpg are the starting identity for the pair. Copy the best approved still into assets/keyframes/S01_kitchen_start.jpg after first generation or from the existing asset."
+}
