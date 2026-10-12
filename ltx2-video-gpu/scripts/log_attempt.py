@@ -23,6 +23,7 @@ COLUMNS = [
     "dl_mbps", "ready_min", "data_gb", "result",
     "est_ready_min", "own_weights_mb", "render_status", "render_s", "render_s_per_video_s",
     "peak_vram_mb", "fail_note",
+    "video_s_per_s", "usd_per_video_s", "cpu_cores", "ram_gb", "pcie", "peak_ram_gb",
 ]
 RUN_COLUMNS = ["timestamp", "run_id", "credit_before", "credit_after", "spent_usd", "attempts",
                "winner_machine", "time_to_up_min", "result"]
@@ -106,6 +107,13 @@ def render_facts(results_path):
     final = cases.get("video_30s") or {}
     ratio = final.get("render_s_per_video_s") or (cases.get("video_short") or {}).get("render_s_per_video_s")
     peaks = [c["peak_vram_mb"] for c in cases.values() if c.get("peak_vram_mb")]
+    # speed = median wall seconds per video second over warm clips of 10 s or more (shorter clips pay a fixed load cost)
+    spv = sorted(c["render_s_per_video_s"] for c in cases.values()
+                 if c.get("status") == "SUCCESS" and c.get("render_s_per_video_s") and (c.get("output") or {}).get("duration_s", 0) >= 10)
+    hw = data.get("env", {}).get("hw", {})
+    gens = [c.get("pcie_gen") for c in cases.values() if c.get("pcie_gen")]
+    widths = [c.get("pcie_width") for c in cases.values() if c.get("pcie_width")]
+    rams = [c.get("peak_ram_gb") for c in cases.values() if c.get("peak_ram_gb")]
     return {
         "render_status": status,
         "render_s": final.get("elapsed_s", ""),
@@ -113,6 +121,10 @@ def render_facts(results_path):
         "peak_vram_mb": max(peaks) if peaks else "",
         "own_weights_mb": data.get("env", {}).get("wan2gp_fetched_own_weights_mb", ""),
         "fail_note": note,
+        "video_s_per_s": spv[len(spv) // 2] if spv else "",
+        "cpu_cores": hw.get("cpu_cores", ""), "ram_gb": hw.get("ram_gb", ""),
+        "pcie": f"g{max(gens)}x{max(widths)}" if gens and widths else "",
+        "peak_ram_gb": max(rams) if rams else "",
     }
 
 
@@ -143,6 +155,8 @@ def main():
             ready = (int(stats["T_HEALTHY"]) - int(stats["T_CREATE"])) // 60
         data_gb = int(stats.get("DATA_BYTES") or 0) // 1_000_000_000
         r = render_facts(os.environ.get("RESULTS_JSON", "results/results.json"))
+        if r.get("video_s_per_s") and stats.get("DPH"):
+            r["usd_per_video_s"] = round(float(r["video_s_per_s"]) * float(stats["DPH"]) / 3600, 5)
         rows.append({
             "timestamp": now, "machine_id": stats.get("MACHINE_ID"), "offer_id": stats.get("OFFER_ID"),
             "gpu": stats.get("GPU"), "dph": stats.get("DPH"), "adv_down_mbps": stats.get("ADV_DOWN"),
