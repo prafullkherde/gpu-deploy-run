@@ -1,0 +1,160 @@
+{
+  "_readme": "Clay lighthouse story suite. Own file — does not modify cases-pratical-utube.json or cases.json. Select with suite_file=cases-clay-lighthouse.json. Story pack (bible, shots, stitch) lives in stories/clay-lighthouse/. Seed keyframe: video-assets/uncle_dog_clay_pair.jpg or generate CL01.",
+  "limits": {
+    "max_images": 4,
+    "max_videos": 6,
+    "min_s": 10,
+    "max_s": 10
+  },
+  "base": {
+    "image_positive": "Anatomically correct, one head per person, correct number of limbs, two hands with five fingers each, natural proportions, props held and worn the way they are in real life, consistent clothing, sharp focus, high detail, clean crisp edges, well exposed, evenly lit, vivid natural colours.",
+    "image_negative": "blurry, out of focus, low resolution, low contrast, washed out, hazy, foggy, dark, underexposed, muddy colours, deformed face, bad anatomy, extra fingers, extra limbs, two heads, fused bodies, floating objects, wrong proportions, text artefacts, watermark",
+    "video_positive": "Bright, well-exposed, evenly lit, crisp sharp focus, high detail, clean vivid colours, clear air with no haze or mist. Each person has one head and two arms; objects keep their size, shape and colour from the first frame to the last; motion is smooth and physically plausible.",
+    "video_negative": "dark, underexposed, foggy, hazy, blurry, low contrast, washed out, flicker, morphing faces, extra limbs, two heads, objects changing shape, subtitles, watermark",
+    "rules": {
+      "clay_style": {
+        "positive": "Hand-made plasticine stop-motion look: visible thumbprints and tiny imperfections in the clay, matte clay surface, slightly stepped stop-motion motion, warm studio lighting, solid-colour clay props with simple shapes.",
+        "negative": "photorealistic, smooth glossy CGI, realistic human skin, digital blur, motion smear",
+        "check": "Looks like clay stop-motion, consistent character design."
+      },
+      "two_person_dialogue": {
+        "positive": "Two characters stand facing each other at eye level, clearly separate bodies, each with a clear face; the speaker's mouth moves while the listener reacts with small nods and expressions; they speak one after the other, never together.",
+        "negative": "characters looking away from each other, merged bodies, both speaking at once, one face repeated",
+        "check": "Two distinct characters face each other, speak in turns, mouths match the speaker."
+      },
+      "object_motion": {
+        "positive": "Every object keeps the same size and colour throughout; moving parts stay attached; motion follows gravity and contact realistically.",
+        "negative": "objects growing or shrinking, parts detaching, objects passing through each other",
+        "check": "Objects keep size and shape; no clipping or morphing."
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "CL01",
+      "name": "CL01_kitchen_keyframe",
+      "concept": "Clay lighthouse S01 keyframe",
+      "kind": "image",
+      "mode": "t2i",
+      "tier": "standard",
+      "origin": "story",
+      "timeout_s": 900,
+      "note": "Keyframe for CV01. Seed identity also in video-assets/uncle_dog_clay_pair.jpg. After QA copy to stories/clay-lighthouse/assets/keyframes/S01_kitchen_start.jpg.",
+      "rules": ["clay_style", "two_person_dialogue"],
+      "settings": {
+        "model_type": "qwen_image_20B",
+        "prompt": "Plasticine stop-motion style two-shot in a cosy clay lighthouse kitchen: on the left a tall lanky clay lighthouse keeper with a drooping ginger moustache, round wire glasses and an oversized yellow raincoat; on the right a short round clay terrier dog standing upright on two legs in a knitted green hat and a tiny red scarf. They face each other at eye level, both with big round eyes and expressive mouths. Warm lamp light, wooden table with a teapot, a porthole window, bright and clear.",
+        "resolution": "1664x928",
+        "seed": 42,
+        "num_inference_steps": 30,
+        "guidance_scale": 4
+      }
+    },
+    {
+      "id": "CL02",
+      "name": "CL02_doorway_keyframe",
+      "concept": "Clay lighthouse S02 keyframe",
+      "kind": "image",
+      "mode": "t2i",
+      "tier": "standard",
+      "origin": "story",
+      "timeout_s": 900,
+      "note": "Keyframe for CV02. After QA copy to stories/clay-lighthouse/assets/keyframes/S02_doorway.jpg.",
+      "rules": ["clay_style", "two_person_dialogue"],
+      "settings": {
+        "model_type": "qwen_image_20B",
+        "prompt": "Plasticine stop-motion style: tall lanky clay lighthouse keeper in oversized yellow raincoat and short round clay terrier in knitted green hat and tiny red scarf stand in the open doorway of a clay lighthouse. Grey-green sea and white waves visible behind them, overcast coastal light, wind lifting the raincoat and scarf. Both face slightly toward camera and the sea, big round clay eyes, matte clay surfaces with visible thumbprints.",
+        "resolution": "1664x928",
+        "seed": 43,
+        "num_inference_steps": 30,
+        "guidance_scale": 4
+      }
+    },
+    {
+      "id": "CL03",
+      "name": "CL03_clifftop_keyframe",
+      "concept": "Clay lighthouse S03 keyframe",
+      "kind": "image",
+      "mode": "t2i",
+      "tier": "standard",
+      "origin": "story",
+      "timeout_s": 900,
+      "note": "Keyframe for CV03. After QA copy to stories/clay-lighthouse/assets/keyframes/S03_clifftop.jpg.",
+      "rules": ["clay_style", "two_person_dialogue"],
+      "settings": {
+        "model_type": "qwen_image_20B",
+        "prompt": "Plasticine stop-motion style: tall lanky clay lighthouse keeper in yellow raincoat and short round clay terrier in green hat and red scarf stand side by side at a cliff edge above the sea, looking toward the horizon. Overcast coastal light, wind, matte clay with thumbprints, simple solid-colour props, big expressive clay eyes.",
+        "resolution": "1664x928",
+        "seed": 44,
+        "num_inference_steps": 30,
+        "guidance_scale": 4
+      }
+    },
+    {
+      "id": "CV01",
+      "name": "CV01_kitchen_dialogue",
+      "concept": "Clay lighthouse S01",
+      "kind": "video",
+      "mode": "i2v",
+      "tier": "standard",
+      "origin": "story",
+      "timeout_s": 1500,
+      "note": "Funny kitchen dialogue. i2v from CL01.",
+      "rules": ["clay_style", "two_person_dialogue", "object_motion"],
+      "settings": {
+        "model_type": "ltx2_22B_distilled",
+        "prompt": "Plasticine stop-motion two-shot in a cosy clay lighthouse kitchen. On the left a tall lanky clay lighthouse keeper with a drooping ginger moustache, round wire glasses and an oversized yellow raincoat; on the right a short round clay terrier standing upright in a knitted green hat and tiny red scarf. They face each other at eye level. The keeper stares at the porthole and says in a slow deadpan English voice: \"The tide is late. Again.\" The terrier jumps onto the table, knocks the teaspoon, and answers in a quick high voice: \"Maybe the sea is on holiday!\" The keeper carefully picks up the teaspoon with two fingers and puts it back: \"Seas do not take holidays.\" The terrier points both paws at the door: \"Then we go tell it!\" Keeper sighs; terrier bounces toward the door. Slightly stepped stop-motion, gentle camera push-in, warm lamp light. Audio: clear turn-taking voices, ticking clock, teaspoon clink, soft ukulele sting.",
+        "resolution": "1280x704",
+        "video_length": 241,
+        "seed": 42,
+        "num_inference_steps": 8,
+        "image_prompt_type": "S"
+      },
+      "needs": "CL01_kitchen_keyframe"
+    },
+    {
+      "id": "CV02",
+      "name": "CV02_doorway_exit",
+      "concept": "Clay lighthouse S02",
+      "kind": "video",
+      "mode": "i2v",
+      "tier": "standard",
+      "origin": "story",
+      "timeout_s": 1500,
+      "note": "Doorway + sea. i2v from CL02.",
+      "rules": ["clay_style", "two_person_dialogue", "object_motion"],
+      "settings": {
+        "model_type": "ltx2_22B_distilled",
+        "prompt": "Plasticine stop-motion. Tall lanky clay lighthouse keeper in oversized yellow raincoat and short round clay terrier in green hat and red scarf stand in the open lighthouse doorway. Grey-green sea and white waves behind them, overcast coastal light, wind moving the raincoat and scarf. The keeper steps out, holds his hat, and says in a slow deadpan English voice: \"I am only checking. We are not arguing with the ocean.\" The terrier runs ahead, spins, points at a big wave and says in a quick high voice: \"That one just waved at us!\" The keeper looks at the wave, then at the terrier: \"That is what waves do.\" Slightly stepped stop-motion, slow camera pull-back then settle. Audio: clear turn-taking voices, wind, distant waves, light comic woodwind.",
+        "resolution": "1280x704",
+        "video_length": 241,
+        "seed": 43,
+        "num_inference_steps": 8,
+        "image_prompt_type": "S"
+      },
+      "needs": "CL02_doorway_keyframe"
+    },
+    {
+      "id": "CV03",
+      "name": "CV03_clifftop_shout",
+      "concept": "Clay lighthouse S03",
+      "kind": "video",
+      "mode": "i2v",
+      "tier": "standard",
+      "origin": "story",
+      "timeout_s": 1500,
+      "note": "Cliff shout; wave rolls in. i2v from CL03.",
+      "rules": ["clay_style", "two_person_dialogue", "object_motion"],
+      "settings": {
+        "model_type": "ltx2_22B_distilled",
+        "prompt": "Plasticine stop-motion. Tall lanky clay lighthouse keeper in yellow raincoat and short round clay terrier in green hat and red scarf stand side by side at a cliff edge above the sea, looking at the horizon. Overcast coastal light, wind. The terrier leans forward and says in a quick high voice: \"If we shout loud enough, will the tide come early?\" The keeper pauses, then says quietly: \"No. But we can try.\" Both lean forward and give a comic shout at the sea. A small wave rolls in. The terrier looks triumphant; the keeper looks mildly annoyed that it worked. Slightly stepped stop-motion, static camera then slight push-in. Audio: clear voices, wind, wave at the end, short triumphant toot then dry stinger.",
+        "resolution": "1280x704",
+        "video_length": 241,
+        "seed": 44,
+        "num_inference_steps": 8,
+        "image_prompt_type": "S"
+      },
+      "needs": "CL03_clifftop_keyframe"
+    }
+  ]
+}

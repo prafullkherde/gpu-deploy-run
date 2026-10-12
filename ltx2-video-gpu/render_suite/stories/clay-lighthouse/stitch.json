@@ -1,0 +1,19 @@
+{
+  "_readme": "Order of shots for the clay-lighthouse story. Final delivery is the stitched delivery/ files only. Raw out/ is never copied into the artifact.",
+  "story_id": "clay-lighthouse",
+  "target_duration_s": 30,
+  "shots": [
+    {"id": "S01", "file": "shots/S01_kitchen.json", "delivery": "delivery/S01_kitchen.mp4"},
+    {"id": "S02", "file": "shots/S02_exit.json", "delivery": "delivery/S02_exit.mp4"},
+    {"id": "S03", "file": "shots/S03_waves.json", "delivery": "delivery/S03_waves.mp4"}
+  ],
+  "transitions": [
+    {"from": "S01", "to": "S02", "type": "hard cut"},
+    {"from": "S02", "to": "S03", "type": "hard cut"}
+  ],
+  "final_delivery": "delivery/clay-lighthouse_30s.mp4",
+  "artifact_policy": {
+    "include": ["delivery/", "logs/", "assets/keyframes/", "assets/characters/", "bible.json", "stitch.json", "shots/"],
+    "exclude": ["out/", "**/partials/", "**/*_gpu.csv"]
+  }
+}
