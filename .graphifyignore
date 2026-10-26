@@ -1,0 +1,9 @@
+graphify-out/
+.venv/
+**/__pycache__/
+ltx2-video-gpu/render_runs/
+ltx2-video-gpu/render_suite/video-assets/
+ltx2-video-gpu/render_suite/stories/*/assets/
+ltx2-video-gpu/render_suite/stories/*/logs/
+ltx2-video-gpu/attempts.csv
+ltx2-video-gpu/runs.csv

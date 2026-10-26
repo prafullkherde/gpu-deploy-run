@@ -1,0 +1,3 @@
+For codebase questions, if the local `graphify` CLI and `graphify-out/graph.json` are available, start with a scoped `graphify query` before broad source searches. Otherwise inspect the source normally; do not install tools or build a graph unless asked.
+
+Use Graphify as a navigation aid, then verify claims in source and tests. Graph exploration must not trigger paid Vast.ai or GPU workflow actions. The repository's safe local graph command is `graphify extract . --code-only`.

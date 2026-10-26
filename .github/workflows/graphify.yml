@@ -1,0 +1,39 @@
+name: Refresh Graphify graph
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Graphify
+        run: python -m pip install --disable-pip-version-check graphifyy==0.9.95
+
+      - name: Build code-only graph
+        run: graphify extract . --code-only
+
+      - name: Publish graph artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphify-${{ github.sha }}
+          path: graphify-out/graph.json
+          if-no-files-found: error
+          retention-days: 7
