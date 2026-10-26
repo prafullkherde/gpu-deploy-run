@@ -1,0 +1,6 @@
+---
+description: Repo-wide Graphify and GPU workflow guidance
+alwaysApply: true
+---
+
+Follow the repository guidance in `AGENTS.md`, including its Graphify freshness, verification, and paid-GPU safety rules.

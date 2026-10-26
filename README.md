@@ -18,6 +18,22 @@ This project automates the full lifecycle of renting a temporary GPU box on Vast
 
 The main workflow is triggered manually via GitHub Actions and supports search-only, full run, or destroy-all modes.
 
+## Codebase graph (optional)
+
+Graphify provides a local, agent-independent way to query this repository's code. Install its isolated CLI with Python 3.10+ and `uv`:
+
+```sh
+uv tool install graphifyy
+graphify extract . --code-only
+graphify query "where is the GPU instance destroyed?"
+```
+
+The graph is written to the ignored `graphify-out/` directory. Code-only extraction needs no model API key and keeps extraction local. The committed `.graphifyignore` omits generated runs, local environments, and audiovisual assets.
+
+The `Refresh Graphify graph` GitHub Actions workflow rebuilds the graph on each push and manual dispatch, then uploads `graph.json` as a 7-day artifact named for the commit. It does not run on pull requests or gate merges. Download that artifact from the matching Actions run if you need the CI-built snapshot; local agents do not receive it automatically. The workflow pins Graphify to `0.9.95`, so update that version deliberately when upgrading.
+
+Agents that can run the `graphify` CLI can query a locally built or downloaded graph. Repo guidance is provided through `AGENTS.md` plus native entrypoints for Claude Code (`CLAUDE.md`), Gemini CLI (`GEMINI.md`), Cursor, and Copilot. This covers several major agents, not every agent or automatic `/graphify` skill invocation. Graph results are navigation aids, not authoritative evidence: verify findings against source and tests. Do not use Graphify to trigger paid GPU workflows.
+
 ## 1. Files in this project
 
 ```
