@@ -1,0 +1,68 @@
+{
+  "id": "S03",
+  "name": "S03_waves",
+  "t_in": "00:20.0",
+  "dur_s": 10,
+  "kind": "video",
+  "mode": "i2v",
+  "start_frame": "assets/keyframes/S03_clifftop.jpg",
+  "characters": ["keeper", "terrier"],
+  "location": "clifftop",
+  "framing": {
+    "size": "MS two-shot profile to 3/4",
+    "angle": "eye-level",
+    "lens_mm": 35,
+    "dof": "medium",
+    "screen_dir": "both looking toward horizon right"
+  },
+  "camera": {
+    "move": "static then very slight push-in on the shout",
+    "ease": "in-out",
+    "handheld": false
+  },
+  "action_beats": [
+    {"t": 0.0, "what": "Both at the cliff edge, side by side, looking at the horizon"},
+    {"t": 2.0, "what": "Terrier leans forward, excited"},
+    {"t": 4.0, "what": "Keeper long pause, then quietly agrees"},
+    {"t": 6.0, "what": "Both lean forward and shout at the sea (comic, not realistic)"},
+    {"t": 8.0, "what": "A small wave actually rolls in; terrier triumphant, keeper annoyed it worked"}
+  ],
+  "performance": {
+    "expr_arc": ["hopeful", "dry agreement", "comic shout", "triumphant vs annoyed"],
+    "eyeline": "horizon, then each other"
+  },
+  "env": {
+    "time": "day, exterior",
+    "weather": "overcast, wind",
+    "props_state": ["cliff edge", "visible wave at end"]
+  },
+  "light": {
+    "key": "cool overcast",
+    "contrast": "soft",
+    "grade": "cool coastal"
+  },
+  "audio": {
+    "dialog": [
+      {"t": 1.0, "who": "terrier", "line": "If we shout loud enough, will the tide come early?"},
+      {"t": 4.0, "who": "keeper", "line": "No. But we can try."},
+      {"t": 6.5, "who": "both", "line": "(comic shout at the sea)"}
+    ],
+    "sfx": ["wind", "wave roll-in at 8s", "soft thud of feet"],
+    "music": "short triumphant toot then dry stinger"
+  },
+  "continuity": {
+    "in": "from S02: both outside walking toward the cliff",
+    "out": "story beat complete; optional later S04 return to kitchen"
+  },
+  "transition": "hard cut or fade",
+  "negative": ["photorealistic", "extra limbs", "realistic shouting violence", "text", "watermark"],
+  "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 44,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+  },
+  "compiled_prompt": "Plasticine stop-motion. Tall lanky clay lighthouse keeper in yellow raincoat and short round clay terrier in green hat and red scarf stand side by side at a cliff edge above the sea, looking at the horizon. Overcast coastal light, wind. The terrier leans forward and says in a quick high voice: \"If we shout loud enough, will the tide come early?\" The keeper pauses, then says quietly: \"No. But we can try.\" Both lean forward and give a comic shout at the sea. A small wave rolls in. The terrier looks triumphant; the keeper looks mildly annoyed that it worked. Slightly stepped stop-motion, static camera then slight push-in. Audio: clear voices, wind, wave at the end, short triumphant toot then dry stinger."
+}

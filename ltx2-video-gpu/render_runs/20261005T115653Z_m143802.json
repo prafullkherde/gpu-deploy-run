@@ -1,0 +1,124 @@
+{
+  "env": {
+    "gpu": "NVIDIA GeForce RTX 5090, 595.91.07, 32607 MiB",
+    "disk_free": "overlay         120G  147M  120G   1% /",
+    "ckpts_before": "",
+    "data_before": "0\t/data",
+    "packages": "{'torch': '2.7.1+cu128', 'triton': '3.3.1', 'mmgp': '3.8.2', 'gradio': '5.29.0'}",
+    "model_files": {
+      "qwen_image_20B": {
+        "definition": "/opt/workspace-internal/Wan2GP/defaults/qwen_image_20B.json",
+        "files": [
+          "qwen_image_20B_bf16.safetensors",
+          "qwen_image_20B_quanto_bf16_int8.safetensors"
+        ],
+        "in_ckpts": {
+          "qwen_image_20B_bf16.safetensors": false,
+          "qwen_image_20B_quanto_bf16_int8.safetensors": false
+        }
+      },
+      "ltx2_22B_distilled": {
+        "definition": "/opt/workspace-internal/Wan2GP/defaults/ltx2_22B_distilled.json",
+        "files": [
+          "ltx-2.3-22b-distilled_diffusion_model.safetensors",
+          "ltx-2.3-22b-distilled_diffusion_model_quanto_int8.safetensors"
+        ],
+        "in_ckpts": {
+          "ltx-2.3-22b-distilled_diffusion_model.safetensors": false,
+          "ltx-2.3-22b-distilled_diffusion_model_quanto_int8.safetensors": false
+        }
+      }
+    },
+    "wan2gp_fetched_own_weights_mb": 72818,
+    "ckpts_after": "8.8G\t/opt/workspace-internal/Wan2GP/ckpts/Qwen2.5-VL-7B-Instruct\n485M\t/opt/workspace-internal/Wan2GP/ckpts/Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors\n13G\t/opt/workspace-internal/Wan2GP/ckpts/gemma-3-12b-it-qat-q4_0-unquantized\n19G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b-distilled_diffusion_model_quanto_int8.safetensors\n13M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b-ic-lora-hdr-scene-emb.safetensors\n102M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_audio_vae.safetensors\n3.8G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_embeddings_connector.safetensors\n2.2G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_text_embedding_projection.safetensors\n1.4G\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_vae.safetensors\n247M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-22b_vocoder.safetensors\n950M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-spatial-upscaler-x2-1.1.safetensors\n250M\t/opt/workspace-internal/Wan2GP/ckpts/ltx-2.3-temporal-upscaler-x2-1.0.safetensors\n20G\t/opt/workspace-internal/Wan2GP/ckpts/qwen_image_20B_quanto_bf16_int8.safetensors\n243M\t/opt/workspace-internal/Wan2GP/ckpts/qwen_vae.safetensors\n4.0K\t/opt/workspace-internal/Wan2GP/ckpts/qwen_vae_config.json"
+  },
+  "cases": [
+    {
+      "name": "image",
+      "status": "SUCCESS",
+      "exit_code": 0,
+      "elapsed_s": 291.4,
+      "requested_frames": null,
+      "ckpts_downloaded_mb": 30688,
+      "outputs": [
+        {
+          "file": "2026-10-05-11h41m29s_seed205275016_Studio Ghibli style painterly illustration, a lone young man with a sword on his back stands on a st.jpg",
+          "size_bytes": 188310,
+          "width": 1024,
+          "height": 1024,
+          "fps": 25.0,
+          "duration_s": 0.04,
+          "has_audio": false
+        }
+      ],
+      "peak_vram_mb": 3616,
+      "mean_util_pct": 3,
+      "max_temp_c": 41
+    },
+    {
+      "name": "video_short",
+      "status": "SUCCESS",
+      "exit_code": 0,
+      "elapsed_s": 416.2,
+      "requested_frames": 121,
+      "ckpts_downloaded_mb": 42130,
+      "outputs": [
+        {
+          "file": "2026-10-05-11h48m24s_seed964729218_Cinematic shot of a lone adventurer on a stone wall at sunset, mountains ahead, soft clouds moving,.mp4",
+          "size_bytes": 3654552,
+          "width": 1280,
+          "height": 704,
+          "fps": 24.0,
+          "duration_s": 5.04,
+          "has_audio": true,
+          "decode_ok": true,
+          "black_s": 0,
+          "frozen_s": 0
+        }
+      ],
+      "peak_vram_mb": 5510,
+      "mean_util_pct": 6,
+      "max_temp_c": 64,
+      "render_s_per_video_s": 82.58
+    },
+    {
+      "name": "video_30s",
+      "status": "SUCCESS",
+      "exit_code": 0,
+      "elapsed_s": 186.1,
+      "requested_frames": 721,
+      "ckpts_downloaded_mb": 0,
+      "outputs": [
+        {
+          "file": "2026-10-05-11h50m33s_seed495900726_Cinematic shot of a lone adventurer on a stone wall at sunset, mountains ahead, soft clouds moving,.mp4",
+          "size_bytes": 19293925,
+          "width": 1280,
+          "height": 704,
+          "fps": 24.0,
+          "duration_s": 20.04,
+          "has_audio": true,
+          "decode_ok": true,
+          "black_s": 0,
+          "frozen_s": 0
+        },
+        {
+          "file": "2026-10-05-11h51m29s_seed495900726_Cinematic shot of a lone adventurer on a stone wall at sunset, mountains ahead, soft clouds moving,.mp4",
+          "size_bytes": 27590103,
+          "width": 1280,
+          "height": 704,
+          "fps": 24.0,
+          "duration_s": 30.04,
+          "has_audio": true,
+          "decode_ok": true,
+          "black_s": 0,
+          "frozen_s": 0
+        }
+      ],
+      "peak_vram_mb": 6816,
+      "mean_util_pct": 80,
+      "max_temp_c": 76,
+      "render_s_per_video_s": 6.2,
+      "predicted_elapsed_s_from_short": 2477.4
+    }
+  ]
+}

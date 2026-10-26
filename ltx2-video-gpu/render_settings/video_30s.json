@@ -1,0 +1,7 @@
+{
+  "model_type": "ltx2_22B_distilled",
+  "prompt": "Cinematic shot of a lone adventurer on a stone wall at sunset, mountains ahead, soft clouds moving, painterly Ghibli style, gentle wind in his cloak",
+  "resolution": "1280x704",
+  "num_inference_steps": 8,
+  "video_length": 721
+}

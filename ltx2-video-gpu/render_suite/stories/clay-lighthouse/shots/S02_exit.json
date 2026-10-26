@@ -1,0 +1,68 @@
+{
+  "id": "S02",
+  "name": "S02_exit",
+  "t_in": "00:10.0",
+  "dur_s": 10,
+  "kind": "video",
+  "mode": "i2v",
+  "start_frame": "assets/keyframes/S02_doorway.jpg",
+  "characters": ["keeper", "terrier"],
+  "location": "doorway",
+  "framing": {
+    "size": "MS wide to MCU",
+    "angle": "eye-level slightly low",
+    "lens_mm": 28,
+    "dof": "medium",
+    "screen_dir": "doorway centre, sea behind"
+  },
+  "camera": {
+    "move": "slow pull-back then settle",
+    "ease": "in-out",
+    "handheld": false
+  },
+  "action_beats": [
+    {"t": 0.0, "what": "Both stand in the open lighthouse doorway, wind on raincoat and scarf"},
+    {"t": 2.0, "what": "Keeper steps out, holds his hat"},
+    {"t": 4.0, "what": "Terrier runs ahead, spins, points at a big wave"},
+    {"t": 6.5, "what": "Keeper looks at the wave, then at the terrier"},
+    {"t": 8.0, "what": "Terrier hops in place; keeper shakes his head once"}
+  ],
+  "performance": {
+    "expr_arc": ["reluctant", "excited", "dry correction"],
+    "eyeline": "sea, then each other"
+  },
+  "env": {
+    "time": "day, exterior",
+    "weather": "overcast, light wind",
+    "props_state": ["door open", "scarf and raincoat moving in wind"]
+  },
+  "light": {
+    "key": "cool overcast coastal",
+    "contrast": "soft",
+    "grade": "cool grey-green"
+  },
+  "audio": {
+    "dialog": [
+      {"t": 1.0, "who": "keeper", "line": "I am only checking. We are not arguing with the ocean."},
+      {"t": 4.5, "who": "terrier", "line": "That one just waved at us!"},
+      {"t": 7.0, "who": "keeper", "line": "That is what waves do."}
+    ],
+    "sfx": ["wind", "distant waves", "scarf flap"],
+    "music": "light comic woodwind"
+  },
+  "continuity": {
+    "in": "from S01: they have just left the kitchen toward the door",
+    "out": "both outside, oriented toward the cliff path -> S03"
+  },
+  "transition": "hard cut",
+  "negative": ["photorealistic", "extra limbs", "both speaking at once", "text", "watermark"],
+  "settings": {
+    "model_type": "ltx2_22B_distilled",
+    "resolution": "1280x704",
+    "video_length": 241,
+    "seed": 43,
+    "num_inference_steps": 8,
+    "image_prompt_type": "S"
+  },
+  "compiled_prompt": "Plasticine stop-motion. Tall lanky clay lighthouse keeper in oversized yellow raincoat and short round clay terrier in green hat and red scarf stand in the open lighthouse doorway. Grey-green sea and white waves behind them, overcast coastal light, wind moving the raincoat and scarf. The keeper steps out, holds his hat, and says in a slow deadpan English voice: \"I am only checking. We are not arguing with the ocean.\" The terrier runs ahead, spins, points at a big wave and says in a quick high voice: \"That one just waved at us!\" The keeper looks at the wave, then at the terrier: \"That is what waves do.\" Slightly stepped stop-motion, slow camera pull-back then settle. Audio: clear turn-taking voices, wind, distant waves, light comic woodwind."
+}
